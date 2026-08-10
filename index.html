@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Ready2Go</title>
+  <meta name="theme-color" content="#2f7de1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="app-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ───── トップバー ───── -->
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="app-icon">📘</span>
+    <span class="app-title">Ready2Go</span>
+  </div>
+  <div class="topbar-center">
+    <div class="location-selects">
+      <select id="pref" class="sel-pref"></select>
+      <select id="region" class="sel-region">
+        <option value="">地域を選択</option>
+      </select>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <button type="button" class="menu-trigger" id="menuTrigger" aria-label="メニュー">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</header>
+
+<!-- ───── 設定パネル（スライドイン） ───── -->
+<div id="settings" class="settings-panel">
+  <div class="settings-inner">
+
+    <div class="settings-section">
+      <p class="settings-section-title">🗑 ゴミ収集</p>
+      <button type="button" id="garbageCalBtn" class="settings-menu-item">
+        <span>ゴミ収集カレンダー</span>
+        <span class="arrow">›</span>
+      </button>
+      <div class="settings-row"><label>前日通知</label><label class="toggle-switch"><input type="checkbox" id="garbageReminder"><span class="toggle-slider"></span></label></div>
+      <div class="settings-row"><label>通知時刻</label><input type="time" id="garbageReminderTime" value="20:00"></div>
+    </div>
+
+    <div class="settings-section">
+      <p class="settings-section-title">🔔 LINE通知</p>
+      <div class="settings-row"><label>当日通知（複数可）</label><input id="todayNotifyTimes" placeholder="07:00,12:00"></div>
+      <div class="settings-row"><label>前日通知（複数可）</label><input id="previousNotifyTimes" placeholder="20:00"></div>
+      <div class="settings-row"><label>一時停止期限</label><input type="date" id="pauseUntil"></div>
+      <button type="button" id="saveNotifyBtn" class="btn-outline-sm">通知設定を保存</button>
+      <button type="button" id="testLineBtn" class="btn-outline-sm">LINEテスト通知</button>
+    </div>
+
+    <div class="settings-section">
+      <p class="settings-section-title">📍 地域・データ</p>
+      <div class="settings-row"><label>地域の決め方</label><select id="locationMode"><option value="address">住所選択</option><option value="gps">位置情報</option></select></div>
+      <button type="button" id="exportBtn" class="btn-outline-sm">予定と設定を書き出す</button>
+      <button type="button" id="installAppBtn" class="btn-outline-sm" hidden>ホーム画面に追加</button>
+      <div id="syncStatus" class="settings-note">同期状態を確認中…</div>
+    </div>
+
+    <div class="settings-section">
+      <p class="settings-section-title">🎨 外観</p>
+      <div class="settings-row">
+        <label>テーマカラー</label>
+        <select id="themeSelect">
+          <option value="#2f7de1">ブルー</option>
+          <option value="#9333ea">パープル</option>
+          <option value="#ec4899">ピンク</option>
+          <option value="#10b981">グリーン</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <label>文字サイズ</label>
+        <select id="fontSize">
+          <option value="13">小</option>
+          <option value="15" selected>中</option>
+          <option value="17">大</option>
+          <option value="19">特大</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <label>ダークモード</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="darkToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <p class="settings-section-title">🖼 背景</p>
+      <div class="settings-row">
+        <label>画像を選択</label>
+        <input type="file" id="bgPicker" accept="image/*" class="file-input">
+      </div>
+      <button type="button" id="resetBgBtn" class="btn-outline-sm">背景をリセット</button>
+    </div>
+
+    <div class="settings-section">
+      <p class="settings-section-title">ℹ️ このアプリについて</p>
+      <a class="settings-menu-item" href="privacy.html"><span>プライバシーポリシー</span><span class="arrow">›</span></a>
+      <a class="settings-menu-item" href="terms.html"><span>利用規約</span><span class="arrow">›</span></a>
+    </div>
+  </div>
+</div>
+
+<div id="consentModal" class="modal consent-modal" hidden>
+  <div class="card consent-card">
+    <h3>利用前の確認</h3>
+    <p>予定と地域設定は端末に保存され、LINE連携時は通知のためサーバーにも保存されます。位置情報は許可した場合だけ天気と地域候補に使います。詳しくは<a href="privacy.html">プライバシーポリシー</a>をご確認ください。</p>
+    <label class="consent-check"><input type="checkbox" id="consentData"> 予定・設定の保存とLINE通知に同意します</label>
+    <label class="consent-check"><input type="checkbox" id="consentLocation"> 位置情報の利用に同意します（任意）</label>
+    <button type="button" id="consentStart" class="btn-primary">設定して始める</button>
+  </div>
+</div>
+
+<!-- ───── メインコンテンツ ───── -->
+<main class="main-content">
+
+  <section id="todaySection" class="today-section app-section">
+    <div class="today-heading">
+      <div><p class="today-eyebrow" id="todayDateLabel">今日</p><h1>今日のまとめ</h1></div>
+      <span id="connectionBadge" class="status-chip">確認中</span>
+    </div>
+    <div class="today-cards">
+      <button class="summary-card summary-event" id="nextEventCard" type="button"><span class="summary-icon">📅</span><span><b>次の予定</b><small id="nextEventText">読み込み中…</small></span></button>
+      <button class="summary-card summary-garbage" id="nextGarbageCard" type="button"><span class="summary-icon">🗑️</span><span><b>次のごみ</b><small id="nextGarbageText">地域を確認中…</small></span></button>
+      <div class="summary-card summary-weather"><span class="summary-icon" id="todayWeatherIcon">☁️</span><span><b>今日の天気</b><small id="todayWeatherText">読み込み中…</small></span></div>
+      <button class="summary-card summary-line" id="lineStatusCard" type="button"><span class="summary-icon">💬</span><span><b>LINE通知</b><small id="lineStatusText">連携状態を確認中…</small></span></button>
+    </div>
+  </section>
+
+  <!-- 週ナビゲーション -->
+  <section id="calendarSection" class="app-section">
+  <div class="calendar-toolbar">
+    <div class="view-switch" role="group" aria-label="カレンダー表示">
+      <button type="button" class="view-btn active" data-view="month">月</button>
+      <button type="button" class="view-btn" data-view="list">7日</button>
+    </div>
+  </div>
+  <div class="week-nav">
+    <button type="button" class="week-btn" id="prevWeek">‹</button>
+    <span id="weekLabel" class="week-label"></span>
+    <button type="button" class="week-btn" id="nextWeek">›</button>
+  </div>
+
+  <!-- 今日の時間別天気 -->
+  <section class="hourly-section">
+    <div class="section-header">
+      <h2 class="section-title">今日の天気</h2>
+    </div>
+    <div id="hourlyWeather" class="hourly-scroll"></div>
+  </section>
+
+  <!-- カレンダー -->
+  <section class="calendar-section">
+    <div id="calendar" class="calendar-grid"></div>
+  </section>
+  </section>
+
+</main>
+
+<nav class="bottom-nav" aria-label="メインメニュー">
+  <button type="button" class="bottom-nav-item active" data-target="todaySection"><span>⌂</span><small>ホーム</small></button>
+  <button type="button" class="bottom-nav-item" data-target="calendarSection"><span>▣</span><small>予定</small></button>
+  <button type="button" class="bottom-nav-item" id="bottomGarbage"><span>♻️</span><small>ごみ</small></button>
+  <button type="button" class="bottom-nav-item" id="bottomSettings"><span>⚙️</span><small>設定</small></button>
+</nav>
+
+<!-- JS -->
+<script src="app-config.js"></script>
+<script src="storage.js"></script>
+<script src="garbage.js"></script>
+<script src="settings.js"></script>
+<script src="weather.js"></script>
+<script src="calendar.js"></script>
+<script src="dashboard.js"></script>
+<script src="script.js"></script>
+
+</body>
+</html>

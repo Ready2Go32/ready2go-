@@ -1,0 +1,160 @@
+// settings.js — 設定画面の管理
+// 依存: なし（DOM が存在すること）
+
+const Settings = (() => {
+
+  function applyAll() {
+    applyBackground();
+    applyTheme();
+    applyFontSize();
+    applyDarkMode();
+  }
+
+  function applyBackground() {
+    const bg = localStorage.getItem("bg");
+    document.body.style.backgroundImage = bg ? `url(${bg})` : "";
+  }
+
+  function resetBackground() {
+    localStorage.removeItem("bg");
+    document.body.style.backgroundImage = "";
+  }
+
+  function onBgPickerChange(e) {
+    const f = e.target.files[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = x => {
+      localStorage.setItem("bg", x.target.result);
+      applyBackground();
+    };
+    r.readAsDataURL(f);
+  }
+
+  function applyTheme() {
+    const theme = localStorage.getItem("theme");
+    if (!theme) return;
+    document.documentElement.style.setProperty("--accent", theme);
+    const sel = document.getElementById("themeSelect");
+    if (sel) sel.value = theme;
+  }
+
+  function onThemeChange(value) {
+    localStorage.setItem("theme", value);
+    document.documentElement.style.setProperty("--accent", value);
+  }
+
+  function applyFontSize() {
+    const size = localStorage.getItem("fontSize");
+    if (!size) return;
+    document.body.style.fontSize = size + "px";
+    const sel = document.getElementById("fontSize");
+    if (sel) sel.value = size;
+  }
+
+  function onFontSizeChange(value) {
+    localStorage.setItem("fontSize", value);
+    document.body.style.fontSize = value + "px";
+  }
+
+  function applyDarkMode() {
+    const dark = localStorage.getItem("darkMode") === "true";
+    if (dark) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+    const toggle = document.getElementById("darkToggle");
+    if (toggle) toggle.checked = dark;
+  }
+
+  function toggleDarkMode() {
+    const toggle = document.getElementById("darkToggle");
+    const isDark = toggle && toggle.checked;
+    if (isDark) {
+      document.documentElement.setAttribute("data-theme", "dark");
+      localStorage.setItem("darkMode", "true");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+      localStorage.setItem("darkMode", "false");
+    }
+  }
+
+  function togglePanel() {
+    const panel = document.getElementById("settings");
+    if (!panel) return;
+    const isOpen = panel.classList.contains("open");
+    panel.classList.toggle("open", !isOpen);
+  }
+
+  function openGarbageCalendar() {
+    // ゴミ収集カレンダーページを別タブで開く
+    const pref   = document.getElementById("pref")?.value || "";
+    const region = document.getElementById("region")?.value || "";
+    const params = new URLSearchParams();
+    if (pref)   params.set("pref",   pref);
+    if (region) params.set("region", region);
+    const url = "garbage-calendar.html" + (params.toString() ? "?" + params.toString() : "");
+    window.open(url, "_blank");
+    // 設定パネルを閉じる
+    togglePanel();
+  }
+
+  function init() {
+    applyAll();
+
+    const bgPicker    = document.getElementById("bgPicker");
+    const themeSelect = document.getElementById("themeSelect");
+    const fontSizeSel = document.getElementById("fontSize");
+    const darkToggle  = document.getElementById("darkToggle");
+    const resetBtn    = document.getElementById("resetBgBtn");
+    const gcBtn       = document.getElementById("garbageCalBtn");
+    const saved = JSON.parse(localStorage.getItem("userSettings") || "{}");
+    const todayTimes = document.getElementById("todayNotifyTimes");
+    const previousTimes = document.getElementById("previousNotifyTimes");
+    const pauseUntil = document.getElementById("pauseUntil");
+    const garbageReminder = document.getElementById("garbageReminder");
+    const garbageReminderTime = document.getElementById("garbageReminderTime");
+    const locationMode = document.getElementById("locationMode");
+    if (todayTimes) todayTimes.value = (saved.todayNotifyTimes || ["07:00"]).join(",");
+    if (previousTimes) previousTimes.value = (saved.previousNotifyTimes || ["20:00"]).join(",");
+    if (pauseUntil) pauseUntil.value = saved.pauseUntil || "";
+    if (garbageReminder) garbageReminder.checked = saved.garbageReminder !== false;
+    if (garbageReminderTime) garbageReminderTime.value = saved.garbageReminderTime || "20:00";
+    if (locationMode) locationMode.value = localStorage.getItem("locationMode") || "address";
+
+    if (bgPicker)    bgPicker.onchange    = onBgPickerChange;
+    if (themeSelect) themeSelect.onchange = () => onThemeChange(themeSelect.value);
+    if (fontSizeSel) fontSizeSel.onchange = () => onFontSizeChange(fontSizeSel.value);
+    if (darkToggle)  darkToggle.onchange  = toggleDarkMode;
+    if (resetBtn)    resetBtn.onclick     = resetBackground;
+    if (gcBtn)       gcBtn.onclick        = openGarbageCalendar;
+    document.getElementById("saveNotifyBtn")?.addEventListener("click", async () => {
+      const parseTimes = value => [...new Set(value.split(",").map(x => x.trim()).filter(x => /^([01]\d|2[0-3]):[0-5]\d$/.test(x)))];
+      const settings = {
+        todayNotifyTimes: parseTimes(todayTimes.value), previousNotifyTimes: parseTimes(previousTimes.value),
+        pauseUntil: pauseUntil.value, garbageReminder: garbageReminder.checked,
+        garbageReminderTime: garbageReminderTime.value,
+        pref: document.getElementById("pref")?.value || "",
+        region: document.getElementById("region")?.value || "",
+        gpsLat: localStorage.getItem("gpsLat"), gpsLon: localStorage.getItem("gpsLon")
+      };
+      await Storage.syncUserSettings(settings); alert("通知設定を保存しました");
+    });
+    document.getElementById("testLineBtn")?.addEventListener("click", async () => {
+      try { await Storage.testLineNotification(); alert("LINEへテスト通知を送りました"); }
+      catch(e) { alert(e.message); }
+    });
+    document.getElementById("exportBtn")?.addEventListener("click", () => Storage.exportData());
+    locationMode?.addEventListener("change", () => {
+      localStorage.setItem("locationMode", locationMode.value);
+      if (locationMode.value === "address") {
+        localStorage.removeItem("gpsLat"); localStorage.removeItem("gpsLon");
+      }
+      location.reload();
+    });
+    Storage.updateSyncStatus();
+  }
+
+  return { init, togglePanel, applyAll };
+})();
