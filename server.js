@@ -46,8 +46,26 @@ function saveData(data) {
 let store = loadData();
 
 // ── ミドルウェア ─────────────────────────────────────────
-// LINE Webhookの署名検証（rawBodyが必要）
-app.use("/webhook", line.middleware(lineConfig));
+// LINE WebhookはJSONミドルウェアより先に処理する。
+// LINE SDKが署名検証のため本文を読み取るので、express.json()を重ねない。
+app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
+  res.sendStatus(200); // LINEには即座に200を返す
+
+  const events = req.body.events || [];
+  for (const event of events) {
+    const userId = event.source?.userId;
+    if (!userId) continue;
+
+    if (event.type === "follow") {
+      await handleFollow(userId);
+    }
+
+    if (event.type === "message" && event.message.type === "text") {
+      await handleMessage(userId, event.message.text, event.replyToken);
+    }
+  }
+});
+
 app.use(express.json());
 
 // CORS（同一URLで公開する構成。APP_URL以外の外部サイトには許可しない）
@@ -78,27 +96,6 @@ app.get("/app-config.js", (req, res) => {
   })};`);
 });
 app.use(express.static(__dirname));
-
-// ── LINE Webhook ─────────────────────────────────────────
-app.post("/webhook", async (req, res) => {
-  res.sendStatus(200); // LINEには即座に200を返す
-
-  const events = req.body.events || [];
-  for (const event of events) {
-    const userId = event.source?.userId;
-    if (!userId) continue;
-
-    // フォローイベント（友だち追加）
-    if (event.type === "follow") {
-      await handleFollow(userId);
-    }
-
-    // メッセージイベント
-    if (event.type === "message" && event.message.type === "text") {
-      await handleMessage(userId, event.message.text, event.replyToken);
-    }
-  }
-});
 
 // 友だち追加時の処理
 async function handleFollow(userId) {
