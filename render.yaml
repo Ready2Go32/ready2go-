@@ -8,8 +8,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATA_DIR
-        value: /var/data
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: true
       - key: APP_URL
         sync: false
       - key: LIFF_ID
@@ -26,8 +28,3 @@ services:
         value: claude-sonnet-4-6
       - key: MORNING_NOTIFY_TIME
         value: 07:00
-    disk:
-      name: ready2go-data
-      mountPath: /var/data
-      sizeGB: 1
-

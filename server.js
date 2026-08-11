@@ -10,8 +10,7 @@ const express    = require("express");
 const line       = require("@line/bot-sdk");
 const cron       = require("node-cron");
 const fetch      = require("node-fetch");
-const fs         = require("fs");
-const path       = require("path");
+const { loadData, saveData, getStorageMode } = require("./database");
 
 const app = express();
 
@@ -24,26 +23,8 @@ const lineClient = new line.messagingApi.MessagingApiClient({
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
 });
 
-// ── データストア（本番ではDBを使用してください） ─────────────
-// ファイルベースの簡易ストア。Renderでは DATA_DIR=/var/data と永続ディスクを使用。
-const DATA_DIR = process.env.DATA_DIR || __dirname;
-const DATA_FILE = path.join(DATA_DIR, "data.json");
-
-function loadData() {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-    }
-  } catch(e) { console.error("データ読み込みエラー:", e); }
-  return { users: {}, events: {} };
-}
-
-function saveData(data) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
-}
-
-let store = loadData();
+// DATABASE_URLがあればPostgreSQL、なければ従来のdata.jsonを使用する。
+let store = { users: {}, events: {} };
 
 // ── ミドルウェア ─────────────────────────────────────────
 // LINE WebhookはJSONミドルウェアより先に処理する。
@@ -556,11 +537,24 @@ app.post("/liff-init", requireUserAuth, (req, res) => {
 });
 
 // ── ヘルスチェック ────────────────────────────────────────
-app.get("/health", (_, res) => res.json({ ok: true, users: Object.keys(store.users).length }));
+app.get("/health", (_, res) => res.json({
+  ok: true,
+  users: Object.keys(store.users).length,
+  storage: getStorageMode(),
+}));
 
 // ── サーバー起動 ─────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Ready2Go サーバー起動 — port ${PORT}`);
-  console.log("ユーザー別通知スケジューラー起動 (Asia/Tokyo)");
+
+async function startServer() {
+  store = await loadData();
+  app.listen(PORT, () => {
+    console.log(`Ready2Go サーバー起動 — port ${PORT}`);
+    console.log("ユーザー別通知スケジューラー起動 (Asia/Tokyo)");
+  });
+}
+
+startServer().catch(error => {
+  console.error("サーバー起動エラー:", error);
+  process.exit(1);
 });

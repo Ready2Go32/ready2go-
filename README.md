@@ -29,10 +29,18 @@ npm start
 
 RenderとLINE公式アカウントへの詳しい設定は [DEPLOY-RENDER-LINE.md](DEPLOY-RENDER-LINE.md) を上から順に進めてください。`render.yaml` も同梱しています。
 
+## データベース
+
+- `DATABASE_URL`あり: PostgreSQLへ保存
+- `DATABASE_URL`なし: 開発用の`data.json`へ保存
+- PostgreSQLへの初回接続時、既存の`data.json`があれば自動的に取り込みます。
+- `/health`の`storage`が`postgresql`ならDB接続中、`file`ならファイル保存です。
+
+接続方法と注意点は [DATABASE-SETUP.md](DATABASE-SETUP.md) を確認してください。
+
 ## 大切な注意
 
 - `.env`、チャネルシークレット、アクセストークン、APIキーはGitHubへ登録しないでください。
-- `data.json` は小規模な試用向けです。一般公開や利用者増加時はPostgreSQLなどのデータベースへ移行してください。
+- `DATABASE_URL`を設定するとPostgreSQLへ保存し、未設定時は開発用の`data.json`へ保存します。
 - ごみ収集日や祝日変更は自治体公式ページでも確認してください。
 - プライバシーポリシーと利用規約はひな型です。公開者名・問い合わせ窓口・実際の運用に合わせて確認・修正してください。
-
