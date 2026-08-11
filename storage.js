@@ -335,13 +335,16 @@ const Storage = (() => {
       if (merged.gpsLon != null) localStorage.setItem("gpsLon", merged.gpsLon);
       if (merged.garbageSchedule?.garbageTypes && merged.pref && merged.region) {
         const weekly = Object.fromEntries(merged.garbageSchedule.garbageTypes.map(item => [item.name, {
-          color: item.color, icon: item.icon, days: item.days || []
+          color: item.color, icon: item.icon, days: item.days || [], dates: item.dates || [], schedule: item.schedule || ""
         }]));
         weekly._verifiedOfficial = merged.garbageSchedule._verifiedOfficial === true;
         weekly._manual = merged.garbageSchedule._manual === true;
+        weekly._municipalRegistered = merged.garbageSchedule._municipalRegistered === true;
         weekly._sourceUrl = merged.garbageSchedule.sourceUrl || "";
         weekly._checkedAt = merged.garbageSchedule.checkedAt || "";
         weekly._note = merged.garbageSchedule.note || "";
+        weekly._validFrom = merged.garbageSchedule.validFrom || "";
+        weekly._validUntil = merged.garbageSchedule.validUntil || "";
         await saveGarbageSchedule(`${merged.pref}::${merged.region}::${merged.area || ""}`, weekly);
       }
       return merged;

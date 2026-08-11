@@ -699,8 +699,10 @@ function getDateKey(d) {
 
 function garbageForDate(schedule, date) {
   if (!schedule?.garbageTypes) return [];
+  const dateKey = timeInJapan(date).dateKey;
   const dow = date.getDay(), week = Math.ceil(date.getDate() / 7);
-  return schedule.garbageTypes.filter(g => (g.days || []).some(r => r.dow === dow && (r.week == null || r.week === week)));
+  return schedule.garbageTypes.filter(g => (g.dates || []).includes(dateKey)
+    || (g.days || []).some(r => r.dow === dow && (r.week == null || r.week === week)));
 }
 
 function buildGarbageReminder(user) {

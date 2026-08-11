@@ -56,13 +56,19 @@ const Garbage = (() => {
 
   // 指定日がゴミ収集日かチェック
   function getGarbageTypesForDate(date, schedule) {
+    const dateKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
     const dow = date.getDay();
     // 第何週か (1始まり)
     const weekOfMonth = Math.ceil(date.getDate() / 7);
 
     const results = [];
     for (const [name, info] of Object.entries(schedule)) {
-      if (!info || !Array.isArray(info.days)) continue;
+      if (!info) continue;
+      if (Array.isArray(info.dates) && info.dates.includes(dateKey)) {
+        results.push({ name, color: info.color, icon: info.icon });
+        continue;
+      }
+      if (!Array.isArray(info.days)) continue;
       for (const rule of info.days) {
         if (rule.dow === dow && (rule.week === null || rule.week === weekOfMonth)) {
           results.push({ name, color: info.color, icon: info.icon });
