@@ -333,12 +333,25 @@ const Storage = (() => {
       if (merged.locationMode) localStorage.setItem("locationMode", merged.locationMode);
       if (merged.gpsLat != null) localStorage.setItem("gpsLat", merged.gpsLat);
       if (merged.gpsLon != null) localStorage.setItem("gpsLon", merged.gpsLon);
+      if (merged.garbageSchedule?.garbageTypes && merged.pref && merged.region) {
+        const weekly = Object.fromEntries(merged.garbageSchedule.garbageTypes.map(item => [item.name, {
+          color: item.color, icon: item.icon, days: item.days || []
+        }]));
+        weekly._verifiedOfficial = merged.garbageSchedule._verifiedOfficial === true;
+        weekly._manual = merged.garbageSchedule._manual === true;
+        weekly._sourceUrl = merged.garbageSchedule.sourceUrl || "";
+        weekly._checkedAt = merged.garbageSchedule.checkedAt || "";
+        weekly._note = merged.garbageSchedule.note || "";
+        await saveGarbageSchedule(`${merged.pref}::${merged.region}::${merged.area || ""}`, weekly);
+      }
       return merged;
     } catch (_) { return local; }
   }
 
   async function syncUserSettings(settings) {
-    localStorage.setItem("userSettings", JSON.stringify(settings));
+    const current = JSON.parse(localStorage.getItem("userSettings") || "{}");
+    const mergedSettings = { ...current, ...settings };
+    localStorage.setItem("userSettings", JSON.stringify(mergedSettings));
     localStorage.setItem("pendingSettingsSync", "1"); queueSync();
     if (!hasServer() || !navigator.onLine) return false;
     try {

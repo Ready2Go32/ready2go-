@@ -65,6 +65,18 @@
     .gc-sort-form input { flex:1; min-width:0; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface2); color:var(--text); font-family:var(--font); }
     .gc-sort-result { margin-top:12px; font-size:14px; line-height:1.7; }
     .gc-sort-answer { padding:12px; border-radius:10px; background:var(--surface2); }
+    .gc-manual-box { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:20px; }
+    .gc-manual-box h2 { font-size:16px; margin-bottom:5px; }
+    .gc-manual-box > p { font-size:12px; color:var(--text-2); margin-bottom:12px; line-height:1.6; }
+    .gc-manual-grid { display:grid; grid-template-columns:1.4fr .65fr 1fr 1fr; gap:8px; }
+    .gc-manual-grid input,.gc-manual-grid select,.gc-source-input { width:100%; min-width:0; padding:9px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface2); color:var(--text); font-family:var(--font); }
+    .gc-manual-actions { display:grid; grid-template-columns:1fr auto; gap:8px; margin-top:9px; }
+    .gc-manual-rules { display:flex; flex-wrap:wrap; gap:7px; margin-top:12px; }
+    .gc-manual-rule { display:inline-flex; align-items:center; gap:6px; padding:6px 7px 6px 10px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); font-size:12px; }
+    .gc-manual-rule button { width:24px; height:24px; min-height:24px; padding:0; border:0; border-radius:50%; background:#fee2e2; color:#dc2626; }
+    .gc-save-status { min-height:18px; margin-top:8px; color:var(--text-3); font-size:12px; }
+    .gc-warning { margin-bottom:20px; padding:12px 14px; border:1px solid #fde68a; border-radius:12px; background:#fffbeb; color:#92400e; font-size:12px; line-height:1.65; }
+    [data-theme="dark"] .gc-warning { background:rgba(146,64,14,.18); border-color:rgba(251,191,36,.35); color:#fcd34d; }
     .gc-bottom-nav { position:fixed; bottom:0; left:0; right:0; height:calc(64px + env(safe-area-inset-bottom)); padding-bottom:env(safe-area-inset-bottom); display:flex; background:var(--surface); border-top:1px solid var(--border); z-index:900; }
     .gc-bottom-nav a { flex:1; min-height:54px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; color:var(--text-3); text-decoration:none; font-size:10px; }
     .gc-bottom-nav a span { font-size:20px; }
@@ -288,6 +300,9 @@
       .gc-region-input, .gc-area-input, .gc-location-help { grid-column: 1 / -1; }
       .gc-location-help { margin: -2px 0 0; }
       .gc-search-btn, .gc-gps-btn { width: 100%; }
+      .gc-manual-grid { grid-template-columns:1fr 1fr; }
+      .gc-manual-grid #gc-manual-name { grid-column:1 / -1; }
+      .gc-manual-actions { grid-template-columns:1fr; }
       .gc-cal-cell { min-height: 60px; padding: 4px 2px; }
       .gc-tag { font-size: 8px; }
       .gc-month-label { font-size: 15px; }
@@ -321,6 +336,25 @@
     <button id="gc-search-btn" class="gc-search-btn">🔍 AIで調べる</button>
     <div class="gc-location-help">候補を選ぶか直接入力できます。地区で収集日が違う場合は町名・地区も入力してください</div>
   </div>
+
+  <div class="gc-warning">⚠️ 祝日・年末年始・荒天時は収集日が変更される場合があります。Ready2Goの表示だけで判断せず、登録した自治体公式ページも確認してください。</div>
+
+  <section class="gc-manual-box">
+    <h2>収集曜日を自分で設定</h2>
+    <p>公式情報を自動取得できない地域でも使えます。同じごみを別の曜日で追加することもできます。</p>
+    <div class="gc-manual-grid">
+      <input id="gc-manual-name" placeholder="例：燃えるごみ" maxlength="30">
+      <select id="gc-manual-icon"><option>🔥</option><option>🗑️</option><option>♻️</option><option>🧴</option><option>📦</option><option>📰</option><option>🔋</option></select>
+      <select id="gc-manual-day"><option value="1">月曜日</option><option value="2">火曜日</option><option value="3">水曜日</option><option value="4">木曜日</option><option value="5">金曜日</option><option value="6">土曜日</option><option value="0">日曜日</option></select>
+      <select id="gc-manual-week"><option value="all">毎週</option><option value="1">第1</option><option value="2">第2</option><option value="3">第3</option><option value="4">第4</option><option value="5">第5</option></select>
+    </div>
+    <div class="gc-manual-actions">
+      <input id="gc-manual-source" class="gc-source-input" type="url" inputmode="url" placeholder="自治体公式ページURL（任意）">
+      <button id="gc-manual-add" class="gc-search-btn" type="button">このルールを追加</button>
+    </div>
+    <div id="gc-manual-rules" class="gc-manual-rules"></div>
+    <div id="gc-manual-status" class="gc-save-status">追加・削除すると自動保存されます</div>
+  </section>
 
   <section class="gc-sort-box">
     <h2>これは何ごみ？</h2>
@@ -378,6 +412,7 @@
   if (savedFs)     document.body.style.fontSize = savedFs + "px";
 
   await Storage.open().catch(() => {});
+  await Storage.loadUserSettings().catch(() => ({}));
 
   // ── 都道府県リスト ──
   const prefSel   = document.getElementById("gc-pref");
@@ -410,8 +445,10 @@
 
   prefSel.onchange = () => {
     regionSel.value = "";
+    areaInput.value = "";
     updateRegionList(prefSel.value);
     localStorage.setItem("pref", prefSel.value);
+    loadSavedSchedule();
   };
 
   function updateRegionList(pref) {
@@ -424,7 +461,10 @@
   }
   regionSel.addEventListener("change", () => {
     const region = regionSel.value.trim();
-    if (region) localStorage.setItem("region_" + prefSel.value, region);
+    if (region) {
+      localStorage.setItem("region_" + prefSel.value, region);
+      areaInput.value = localStorage.getItem("area_" + prefSel.value + "_" + region) || "";
+    }
   });
   areaInput.addEventListener("change", () => {
     if (regionSel.value.trim()) localStorage.setItem("area_" + prefSel.value + "_" + regionSel.value.trim(), areaInput.value.trim());
@@ -464,13 +504,56 @@
 
   // ── AI検索 ──
   let currentSchedule = null;
+  let manualTypes = [];
   let displayMonth = new Date();
   displayMonth.setDate(1);
 
   document.getElementById("gc-search-btn").onclick = () => searchGarbage();
 
-  // 地域が既に選択されていれば自動検索
-  if (regionSel.value) searchGarbage();
+  // 地域が既に選択されていれば、保存済みデータだけを読み込む。
+  if (regionSel.value) loadSavedSchedule();
+
+  regionSel.addEventListener("change", loadSavedSchedule);
+  areaInput.addEventListener("change", loadSavedSchedule);
+
+  async function loadSavedSchedule() {
+    const pref = prefSel.value;
+    const region = regionSel.value.trim();
+    const area = areaInput.value.trim();
+    currentSchedule = null;
+    manualTypes = [];
+    renderManualRules();
+    document.getElementById("gc-calendar-section").style.display = "none";
+    document.getElementById("gc-ai-area").innerHTML = '<div class="gc-placeholder"><div class="gc-placeholder-icon">🗑️</div><div>保存済み情報がありません。<br>公式情報を調べるか、収集曜日を自分で設定してください。</div></div>';
+    if (!region) return;
+    let weekly = await Storage.getGarbageSchedule(Garbage.makeKey(pref, region, area));
+    if (!weekly) weekly = await Storage.getGarbageSchedule(`${pref}::${region}`);
+    if (!weekly) return;
+    const garbageTypes = Object.entries(weekly)
+      .filter(([, info]) => info && Array.isArray(info.days))
+      .map(([name, info]) => ({ name, color:info.color, icon:info.icon, days:info.days, schedule:describeDays(info.days) }));
+    if (!garbageTypes.length) return;
+    currentSchedule = {
+      garbageTypes,
+      sourceUrl:weekly._sourceUrl || "",
+      checkedAt:weekly._checkedAt || "",
+      note:weekly._note || "",
+      confidence:weekly._verifiedOfficial ? "high" : "manual",
+      _verifiedOfficial:weekly._verifiedOfficial === true,
+      _manual:weekly._manual === true
+    };
+    if (weekly._manual) manualTypes = garbageTypes.map(item => ({ ...item, days:item.days.map(rule => ({...rule})) }));
+    document.getElementById("gc-manual-source").value = weekly._sourceUrl || "";
+    renderManualRules();
+    renderAIResult(pref, region + (area ? ` ${area}` : ""), currentSchedule);
+    renderCalendar();
+    document.getElementById("gc-calendar-section").style.display = "block";
+  }
+
+  function describeDays(days = []) {
+    const names = ["日","月","火","水","木","金","土"];
+    return days.map(rule => `${rule.week == null ? "毎週" : `第${rule.week}`} ${names[rule.dow]}曜`).join("・");
+  }
 
   async function searchGarbage() {
     const pref   = prefSel.value;
@@ -482,7 +565,7 @@
     }
     localStorage.setItem("pref", pref);
     localStorage.setItem("region_" + pref, region);
-    if (area) localStorage.setItem("area_" + pref + "_" + region, area);
+    localStorage.setItem("area_" + pref + "_" + region, area);
 
     const aiArea = document.getElementById("gc-ai-area");
     aiArea.innerHTML = `<div class="gc-ai-loading"><div class="gc-spinner"></div>AIがゴミ収集スケジュールを検索中…</div>`;
@@ -514,7 +597,8 @@
           weekly._verifiedOfficial = true;
           weekly._sourceUrl = parsed.sourceUrl;
           weekly._checkedAt = parsed.checkedAt;
-          await Storage.saveGarbageSchedule(Garbage.makeKey(pref, region), weekly);
+          weekly._note = parsed.note || "";
+          await Storage.saveGarbageSchedule(Garbage.makeKey(pref, region, area), weekly);
           return parsed;
         }
       } catch(e) {}
@@ -546,8 +630,65 @@
     weeklySchedule._verifiedOfficial = true;
     weeklySchedule._sourceUrl = schedule.sourceUrl;
     weeklySchedule._checkedAt = schedule.checkedAt;
-    await Storage.saveGarbageSchedule(Garbage.makeKey(pref, region), weeklySchedule);
+    weeklySchedule._note = schedule.note || "";
+    await Storage.saveGarbageSchedule(Garbage.makeKey(pref, region, area), weeklySchedule);
+    await Storage.syncUserSettings({ pref, region, area, garbageSchedule:schedule });
     return schedule;
+  }
+
+  document.getElementById("gc-manual-add").onclick = async () => {
+    const name = document.getElementById("gc-manual-name").value.trim();
+    if (!name) return alert("ごみの種類を入力してください");
+    const icon = document.getElementById("gc-manual-icon").value;
+    const dow = Number(document.getElementById("gc-manual-day").value);
+    const rawWeek = document.getElementById("gc-manual-week").value;
+    const week = rawWeek === "all" ? null : Number(rawWeek);
+    let item = manualTypes.find(entry => entry.name === name);
+    if (!item) {
+      const colors = ["#ef4444","#0ea5e9","#10b981","#f59e0b","#8b5cf6","#64748b"];
+      item = { name, icon, color:colors[manualTypes.length % colors.length], days:[] };
+      manualTypes.push(item);
+    }
+    if (!item.days.some(rule => rule.dow === dow && rule.week === week)) item.days.push({ dow, week });
+    item.icon = icon;
+    document.getElementById("gc-manual-name").value = "";
+    renderManualRules();
+    await saveManualSchedule();
+  };
+
+  function renderManualRules() {
+    const wrap = document.getElementById("gc-manual-rules");
+    wrap.innerHTML = "";
+    manualTypes.forEach((item, index) => {
+      const chip = document.createElement("span");
+      chip.className = "gc-manual-rule";
+      const label = document.createElement("span");
+      label.textContent = `${item.icon || "🗑️"} ${item.name}：${describeDays(item.days)}`;
+      const remove = document.createElement("button");
+      remove.type = "button"; remove.textContent = "×"; remove.setAttribute("aria-label", `${item.name}を削除`);
+      remove.onclick = async () => { manualTypes.splice(index, 1); renderManualRules(); await saveManualSchedule(); };
+      chip.append(label, remove); wrap.appendChild(chip);
+    });
+  }
+
+  async function saveManualSchedule() {
+    const pref = prefSel.value, region = regionSel.value.trim(), area = areaInput.value.trim();
+    if (!region) return alert("先に市区町村を入力してください");
+    const sourceUrl = document.getElementById("gc-manual-source").value.trim();
+    if (sourceUrl && escapeUrl(sourceUrl) === "#") return alert("自治体URLはhttps://から入力してください");
+    const checkedAt = new Date().toISOString();
+    const weekly = Object.fromEntries(manualTypes.map(item => [item.name, { color:item.color, icon:item.icon, days:item.days }]));
+    weekly._manual = true; weekly._verifiedOfficial = false; weekly._sourceUrl = sourceUrl; weekly._checkedAt = checkedAt;
+    weekly._note = "手動設定です。祝日・年末年始は自治体公式情報を確認してください。";
+    await Storage.saveGarbageSchedule(Garbage.makeKey(pref, region, area), weekly);
+    const serverSchedule = { garbageTypes:manualTypes.map(item => ({ ...item, schedule:describeDays(item.days) })), sourceUrl, checkedAt, note:weekly._note, confidence:"manual", _manual:true };
+    const synced = await Storage.syncUserSettings({ pref, region, area, garbageSchedule:serverSchedule });
+    currentSchedule = serverSchedule;
+    document.getElementById("gc-manual-status").textContent = synced ? "✓ 自動保存しました" : "端末に保存済み・オンライン時に同期します";
+    localStorage.setItem("pref", pref); localStorage.setItem("region_" + pref, region);
+    localStorage.setItem("area_" + pref + "_" + region, area);
+    renderAIResult(pref, region + (area ? ` ${area}` : ""), currentSchedule);
+    renderCalendar(); document.getElementById("gc-calendar-section").style.display = "block";
   }
 
   document.getElementById("gc-sort-btn").onclick = async () => {
@@ -571,27 +712,31 @@
 
   function escapeText(value) { const d=document.createElement("div"); d.textContent=String(value || ""); return d.innerHTML; }
   function escapeUrl(value) { try { const u=new URL(value); return u.protocol === "https:" ? u.href : "#"; } catch { return "#"; } }
+  function safeColor(value) { return /^#[0-9a-f]{6}$/i.test(value || "") ? value : "#64748b"; }
 
   function renderAIResult(pref, region, schedule) {
     const aiArea = document.getElementById("gc-ai-area");
-    const conf = schedule.confidence === "high" ? "✅ 公式情報を取得" : "⚠️ 公式ページで要確認";
+    const conf = schedule._manual ? "✍️ 手動設定" : schedule.confidence === "high" ? "✅ 公式情報を取得" : "⚠️ 公式ページで要確認";
 
-    let html = `<div class="gc-schedule-header">${pref}${region} のゴミ収集スケジュール <span style="font-size:11px;color:var(--text-3)">${conf}</span></div>`;
+    let html = `<div class="gc-schedule-header">${escapeText(pref)}${escapeText(region)} のゴミ収集スケジュール <span style="font-size:11px;color:var(--text-3)">${conf}</span></div>`;
     html += `<div class="gc-schedule-grid">`;
     (schedule.garbageTypes || []).forEach(g => {
       html += `<div class="gc-schedule-item">
-        <div class="gc-schedule-dot" style="background:${g.color}"></div>
-        <span>${g.icon} <b>${g.name}</b> — ${g.schedule}</span>
+        <div class="gc-schedule-dot" style="background:${safeColor(g.color)}"></div>
+        <span>${escapeText(g.icon)} <b>${escapeText(g.name)}</b> — ${escapeText(g.schedule)}</span>
       </div>`;
     });
     html += `</div>`;
 
     if (schedule.note) {
-      html += `<div class="gc-note">📝 ${schedule.note}</div>`;
+      html += `<div class="gc-note">📝 ${escapeText(schedule.note)}</div>`;
     }
     if (schedule.sourceUrl) {
-      html += `<a href="${schedule.sourceUrl}" target="_blank" class="gc-source-link">🌐 自治体公式サイトで確認する</a>`;
+      html += `<a href="${escapeUrl(schedule.sourceUrl)}" target="_blank" rel="noopener" class="gc-source-link">🌐 自治体公式サイトで確認する</a>`;
     }
+    if (schedule.checkedAt) html += `<div class="gc-note">確認・更新：${new Date(schedule.checkedAt).toLocaleString("ja-JP")}</div>`;
+    const next = Garbage.getNextCollection(new Date(), Object.fromEntries((schedule.garbageTypes || []).map(item => [item.name, item])));
+    if (next) html += `<div class="gc-note" style="margin-top:8px"><b>次回：</b>${next.date.toLocaleDateString("ja-JP",{month:"long",day:"numeric",weekday:"short"})}　${next.types.map(item => `${escapeText(item.icon || "")}${escapeText(item.name)}`).join("・")}</div>`;
 
     aiArea.innerHTML = html;
   }
@@ -631,7 +776,7 @@
         if (!g.days) return;
         for (const rule of g.days) {
           if (rule.dow === dow && (rule.week === null || rule.week === weekOfMonth)) {
-            tags += `<div class="gc-tag" style="background:${g.color}">${g.icon} ${g.name}</div>`;
+            tags += `<div class="gc-tag" style="background:${safeColor(g.color)}">${escapeText(g.icon)} ${escapeText(g.name)}</div>`;
             break;
           }
         }
@@ -648,8 +793,8 @@
     const legend = document.getElementById("gc-legend");
     legend.innerHTML = (currentSchedule.garbageTypes || []).map(g =>
       `<div class="gc-legend-item">
-        <div class="gc-legend-dot" style="background:${g.color}"></div>
-        ${g.icon} ${g.name}
+        <div class="gc-legend-dot" style="background:${safeColor(g.color)}"></div>
+        ${escapeText(g.icon)} ${escapeText(g.name)}
       </div>`
     ).join("");
   }

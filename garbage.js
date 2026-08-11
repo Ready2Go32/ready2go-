@@ -74,20 +74,25 @@ const Garbage = (() => {
   }
 
   // 地域キー生成
-  function makeKey(pref, region) {
-    return `${pref}::${region}`;
+  function makeKey(pref, region, area = "") {
+    return `${pref}::${region}::${String(area || "").trim()}`;
   }
 
   function getRegions(pref) {
     return REGION_MAP[pref] || [];
   }
 
-  async function getSchedule(pref, region) {
-    const key = makeKey(pref, region);
+  async function getSchedule(pref, region, area = null) {
+    const resolvedArea = area == null
+      ? localStorage.getItem(`area_${pref}_${region}`) || ""
+      : area;
+    const key = makeKey(pref, region, resolvedArea);
     // 未確認の収集日を推測して作らない。公式情報を確認したページで
     // 保存されたスケジュールだけを週間カレンダーへ表示する。
-    const schedule = await Storage.getGarbageSchedule(key);
-    return schedule?._verifiedOfficial === true ? schedule : null;
+    let schedule = await Storage.getGarbageSchedule(key);
+    // v10以前の「都道府県::市区町村」形式も読み込む。
+    if (!schedule) schedule = await Storage.getGarbageSchedule(`${pref}::${region}`);
+    return schedule?._verifiedOfficial === true || schedule?._manual === true ? schedule : null;
   }
 
   function getNextCollection(fromDate, schedule, maxDays = 31) {
