@@ -191,6 +191,7 @@ const Calendar = (() => {
           </select></div>
           <div class="form-group"><label>繰り返し終了日</label><input type="date" id="m-repeat-until" value="${current.repeatUntil || dateKey}"></div>
         </div>
+        ${isEdit ? '<button id="m-delete" class="btn-danger" type="button">この予定を削除</button>' : ""}
         <div class="form-actions">
           <button id="m-cancel" class="btn-secondary">キャンセル</button>
           <button id="m-save" class="btn-primary">保存</button>
@@ -214,6 +215,12 @@ const Calendar = (() => {
     overlay.querySelector("#m-cancel").onclick = () => overlay.remove();
     overlay.querySelector("#cardClose").onclick = () => overlay.remove();
     overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+    overlay.querySelector("#m-delete")?.addEventListener("click", async () => {
+      if (!confirm(`「${current.title}」を削除しますか？`)) return;
+      await Storage.deleteEvent(dateKey, eventIdx);
+      overlay.remove();
+      draw();
+    });
 
     overlay.querySelector("#m-save").onclick = async () => {
       const newTitle    = overlay.querySelector("#m-title").value.trim();

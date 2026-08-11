@@ -110,14 +110,64 @@ const Settings = (() => {
     const resetBtn    = document.getElementById("resetBgBtn");
     const gcBtn       = document.getElementById("garbageCalBtn");
     const saved = JSON.parse(localStorage.getItem("userSettings") || "{}");
-    const todayTimes = document.getElementById("todayNotifyTimes");
-    const previousTimes = document.getElementById("previousNotifyTimes");
+    const todayPicker = document.getElementById("todayNotifyTimePicker");
+    const previousPicker = document.getElementById("previousNotifyTimePicker");
+    const todayList = document.getElementById("todayNotifyTimeList");
+    const previousList = document.getElementById("previousNotifyTimeList");
+    let todayTimes = Array.isArray(saved.todayNotifyTimes) ? [...new Set(saved.todayNotifyTimes)] : ["07:00"];
+    let previousTimes = Array.isArray(saved.previousNotifyTimes) ? [...new Set(saved.previousNotifyTimes)] : ["20:00"];
     const pauseUntil = document.getElementById("pauseUntil");
     const garbageReminder = document.getElementById("garbageReminder");
     const garbageReminderTime = document.getElementById("garbageReminderTime");
     const locationMode = document.getElementById("locationMode");
-    if (todayTimes) todayTimes.value = (saved.todayNotifyTimes || ["07:00"]).join(",");
-    if (previousTimes) previousTimes.value = (saved.previousNotifyTimes || ["20:00"]).join(",");
+    const validTime = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value || "");
+    todayTimes = todayTimes.filter(validTime).sort();
+    previousTimes = previousTimes.filter(validTime).sort();
+
+    function renderTimeList(container, values, onRemove) {
+      if (!container) return;
+      container.innerHTML = "";
+      if (!values.length) {
+        const empty = document.createElement("span");
+        empty.className = "time-list-empty";
+        empty.textContent = "通知なし";
+        container.appendChild(empty);
+        return;
+      }
+      values.forEach(time => {
+        const chip = document.createElement("span");
+        chip.className = "time-chip";
+        const label = document.createElement("span");
+        label.textContent = time;
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.setAttribute("aria-label", `${time}の通知を削除`);
+        remove.textContent = "×";
+        remove.onclick = () => onRemove(time);
+        chip.append(label, remove);
+        container.appendChild(chip);
+      });
+    }
+
+    const renderToday = () => renderTimeList(todayList, todayTimes, time => {
+      todayTimes = todayTimes.filter(value => value !== time); renderToday();
+    });
+    const renderPrevious = () => renderTimeList(previousList, previousTimes, time => {
+      previousTimes = previousTimes.filter(value => value !== time); renderPrevious();
+    });
+    renderToday();
+    renderPrevious();
+
+    document.getElementById("addTodayNotifyTime")?.addEventListener("click", () => {
+      if (!validTime(todayPicker.value)) return alert("時計から時刻を選んでください");
+      todayTimes = [...new Set([...todayTimes, todayPicker.value])].sort();
+      todayPicker.value = ""; renderToday();
+    });
+    document.getElementById("addPreviousNotifyTime")?.addEventListener("click", () => {
+      if (!validTime(previousPicker.value)) return alert("時計から時刻を選んでください");
+      previousTimes = [...new Set([...previousTimes, previousPicker.value])].sort();
+      previousPicker.value = ""; renderPrevious();
+    });
     if (pauseUntil) pauseUntil.value = saved.pauseUntil || "";
     if (garbageReminder) garbageReminder.checked = saved.garbageReminder !== false;
     if (garbageReminderTime) garbageReminderTime.value = saved.garbageReminderTime || "20:00";
@@ -130,16 +180,16 @@ const Settings = (() => {
     if (resetBtn)    resetBtn.onclick     = resetBackground;
     if (gcBtn)       gcBtn.onclick        = openGarbageCalendar;
     document.getElementById("saveNotifyBtn")?.addEventListener("click", async () => {
-      const parseTimes = value => [...new Set(value.split(",").map(x => x.trim()).filter(x => /^([01]\d|2[0-3]):[0-5]\d$/.test(x)))];
       const settings = {
-        todayNotifyTimes: parseTimes(todayTimes.value), previousNotifyTimes: parseTimes(previousTimes.value),
+        todayNotifyTimes: todayTimes, previousNotifyTimes: previousTimes,
         pauseUntil: pauseUntil.value, garbageReminder: garbageReminder.checked,
         garbageReminderTime: garbageReminderTime.value,
         pref: document.getElementById("pref")?.value || "",
         region: document.getElementById("region")?.value || "",
         gpsLat: localStorage.getItem("gpsLat"), gpsLon: localStorage.getItem("gpsLon")
       };
-      await Storage.syncUserSettings(settings); alert("通知設定を保存しました");
+      const synced = await Storage.syncUserSettings(settings);
+      alert(synced ? "通知設定を保存しました" : "端末に保存しました。オンラインになったときLINE設定へ同期します");
     });
     document.getElementById("testLineBtn")?.addEventListener("click", async () => {
       try { await Storage.testLineNotification(); alert("LINEへテスト通知を送りました"); }

@@ -53,8 +53,16 @@
 
     <div class="settings-section">
       <p class="settings-section-title">🔔 LINE通知</p>
-      <div class="settings-row"><label>当日通知（複数可）</label><input id="todayNotifyTimes" placeholder="07:00,12:00"></div>
-      <div class="settings-row"><label>前日通知（複数可）</label><input id="previousNotifyTimes" placeholder="20:00"></div>
+      <div class="notification-time-setting">
+        <label>当日通知（複数可）</label>
+        <div class="time-add-row"><input type="time" id="todayNotifyTimePicker" aria-label="追加する当日通知時刻"><button type="button" id="addTodayNotifyTime" class="time-add-btn">追加</button></div>
+        <div id="todayNotifyTimeList" class="time-chip-list" aria-label="登録済みの当日通知時刻"></div>
+      </div>
+      <div class="notification-time-setting">
+        <label>前日通知（複数可）</label>
+        <div class="time-add-row"><input type="time" id="previousNotifyTimePicker" aria-label="追加する前日通知時刻"><button type="button" id="addPreviousNotifyTime" class="time-add-btn">追加</button></div>
+        <div id="previousNotifyTimeList" class="time-chip-list" aria-label="登録済みの前日通知時刻"></div>
+      </div>
       <div class="settings-row"><label>一時停止期限</label><input type="date" id="pauseUntil"></div>
       <button type="button" id="saveNotifyBtn" class="btn-outline-sm">通知設定を保存</button>
       <button type="button" id="testLineBtn" class="btn-outline-sm">LINEテスト通知</button>
