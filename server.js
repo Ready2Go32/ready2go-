@@ -167,6 +167,45 @@ function ensureUser(userId) {
   }
 }
 
+const USER_SETTING_KEYS = [
+  "notifyEnabled", "todayNotifyTimes", "previousNotifyTimes", "pauseUntil",
+  "garbageReminder", "garbageReminderTime", "pref", "region", "area",
+  "locationMode", "gpsLat", "gpsLon", "garbageSchedule"
+];
+
+function publicUserSettings(user = {}) {
+  return Object.fromEntries(USER_SETTING_KEYS
+    .filter(key => user[key] !== undefined)
+    .map(key => [key, JSON.parse(JSON.stringify(user[key]))]));
+}
+
+function cleanEvent(event) {
+  if (!event || typeof event !== "object" || Array.isArray(event)) {
+    throw new Error("予定の形式が正しくありません");
+  }
+  const title = String(event.title || "").trim();
+  if (!title || title.length > 120) throw new Error("予定名を1〜120文字で入力してください");
+  const time = event.time == null ? "" : String(event.time);
+  if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    throw new Error("時刻の形式が正しくありません");
+  }
+  const safe = JSON.parse(JSON.stringify(event));
+  safe.title = title;
+  safe.time = time;
+  return safe;
+}
+
+function cleanEventList(value) {
+  if (!Array.isArray(value) || value.length > 200) {
+    throw new Error("1日に保存できる予定は200件までです");
+  }
+  return value.map(cleanEvent);
+}
+
+function validDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 function getBearerToken(req) {
   const value = req.headers.authorization || "";
   return value.startsWith("Bearer ") ? value.slice(7) : null;
@@ -209,69 +248,115 @@ async function requireUserAuth(req, res, next) {
 // 予定一覧取得
 app.get("/api/events/:dateKey", requireUserAuth, (req, res) => {
   const { dateKey } = req.params;
+  if (!validDateKey(dateKey)) return res.status(400).json({ error: "日付が正しくありません" });
   const list = store.events[req.userId][dateKey] || [];
   res.json(list);
 });
 
+// その日全体を置き換える。オフライン再同期は変更した日だけを送る。
+app.put("/api/events/:dateKey", requireUserAuth, async (req, res) => {
+  try {
+    const { dateKey } = req.params;
+    if (!validDateKey(dateKey)) return res.status(400).json({ error: "日付が正しくありません" });
+    store.events[req.userId][dateKey] = cleanEventList(req.body?.events);
+    await saveData(store);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "予定を保存できませんでした" });
+  }
+});
+
 // 予定追加
-app.post("/api/events/:dateKey", requireUserAuth, (req, res) => {
+app.post("/api/events/:dateKey", requireUserAuth, async (req, res) => {
   const { dateKey } = req.params;
-  const event = req.body;
-  if (!event || !event.title) {
-    res.status(400).json({ error: "タイトルが必要です" });
-    return;
+  try {
+    if (!validDateKey(dateKey)) return res.status(400).json({ error: "日付が正しくありません" });
+    const event = cleanEvent(req.body);
+    if (!store.events[req.userId][dateKey]) store.events[req.userId][dateKey] = [];
+    if (store.events[req.userId][dateKey].length >= 200) {
+      return res.status(400).json({ error: "1日に保存できる予定は200件までです" });
+    }
+    store.events[req.userId][dateKey].push(event);
+    await saveData(store);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "予定を保存できませんでした" });
   }
-  if (!store.events[req.userId][dateKey]) {
-    store.events[req.userId][dateKey] = [];
-  }
-  store.events[req.userId][dateKey].push(event);
-  saveData(store);
-  res.json({ ok: true });
 });
 
 // 予定更新
-app.put("/api/events/:dateKey/:idx", requireUserAuth, (req, res) => {
+app.put("/api/events/:dateKey/:idx", requireUserAuth, async (req, res) => {
   const { dateKey, idx } = req.params;
   const list = store.events[req.userId][dateKey] || [];
   const i = parseInt(idx, 10);
-  if (i < 0 || i >= list.length) {
+  if (!Number.isInteger(i) || i < 0 || i >= list.length) {
     res.status(404).json({ error: "見つかりません" });
     return;
   }
-  list[i] = req.body;
+  try { list[i] = cleanEvent(req.body); }
+  catch (error) { return res.status(400).json({ error: error.message }); }
   store.events[req.userId][dateKey] = list;
-  saveData(store);
-  res.json({ ok: true });
+  try {
+    await saveData(store);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(503).json({ error: "データベースへ保存できませんでした" });
+  }
 });
 
 // 予定削除
-app.delete("/api/events/:dateKey/:idx", requireUserAuth, (req, res) => {
+app.delete("/api/events/:dateKey/:idx", requireUserAuth, async (req, res) => {
   const { dateKey, idx } = req.params;
   const list = store.events[req.userId][dateKey] || [];
   const i = parseInt(idx, 10);
+  if (!Number.isInteger(i) || i < 0 || i >= list.length) {
+    return res.status(404).json({ error: "見つかりません" });
+  }
   list.splice(i, 1);
   store.events[req.userId][dateKey] = list;
-  saveData(store);
-  res.json({ ok: true });
+  try {
+    await saveData(store);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(503).json({ error: "データベースへ保存できませんでした" });
+  }
 });
 
 // 全予定一括保存（IndexedDB同期用）
-app.post("/api/events-bulk", requireUserAuth, (req, res) => {
+app.post("/api/events-bulk", requireUserAuth, async (req, res) => {
   const { events } = req.body;
   if (!events || typeof events !== "object") {
     res.status(400).json({ error: "eventsが必要です" });
     return;
   }
-  store.events[req.userId] = events;
-  saveData(store);
-  res.json({ ok: true });
+  try { store.events[req.userId] = sanitizeBackupEvents(events); }
+  catch (error) { return res.status(400).json({ error: error.message }); }
+  try {
+    await saveData(store);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(503).json({ error: "データベースへ保存できませんでした" });
+  }
 });
 
 // ユーザー設定保存（位置情報・地域など）
-app.post("/api/user-settings", requireUserAuth, (req, res) => {
-  Object.assign(store.users[req.userId], req.body);
-  saveData(store);
-  res.json({ ok: true });
+app.get("/api/user-settings", requireUserAuth, (req, res) => {
+  res.json(publicUserSettings(store.users[req.userId]));
+});
+
+app.post("/api/user-settings", requireUserAuth, async (req, res) => {
+  const input = req.body && typeof req.body === "object" ? req.body : {};
+  for (const key of USER_SETTING_KEYS) {
+    if (input[key] !== undefined) {
+      store.users[req.userId][key] = JSON.parse(JSON.stringify(input[key]));
+    }
+  }
+  try {
+    await saveData(store);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(503).json({ error: "設定をデータベースへ保存できませんでした" });
+  }
 });
 
 // ── ユーザー本人のバックアップ・復元 ─────────────────────

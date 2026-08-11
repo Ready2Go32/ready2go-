@@ -22,6 +22,22 @@ const Storage = (() => {
     return { ...extra, "Authorization": `Bearer ${getLineIdToken()}` };
   }
 
+  function pendingDates() {
+    try { return JSON.parse(localStorage.getItem("pendingEventDates") || "[]"); }
+    catch (_) { return []; }
+  }
+  function markDatePending(dateKey) {
+    localStorage.setItem("pendingEventDates", JSON.stringify([...new Set([...pendingDates(), dateKey])]));
+    localStorage.setItem("pendingServerSync", "1"); updateSyncStatus();
+  }
+  function clearDatePending(dateKey) {
+    const remaining = pendingDates().filter(key => key !== dateKey);
+    localStorage.setItem("pendingEventDates", JSON.stringify(remaining));
+    if (!remaining.length && localStorage.getItem("pendingSettingsSync") !== "1") {
+      localStorage.removeItem("pendingServerSync");
+    }
+    updateSyncStatus();
+  }
   function queueSync() { localStorage.setItem("pendingServerSync", "1"); updateSyncStatus(); }
   function updateSyncStatus(message) {
     const el = document.getElementById("syncStatus");
@@ -65,7 +81,12 @@ const Storage = (() => {
         const res = await fetch(`${SERVER_URL}/api/events/${dateKey}`, {
           headers: authHeaders()
         });
-        if (res.ok) return await res.json();
+        if (res.ok) {
+          const list = await res.json();
+          // オフラインでも閲覧・編集できるよう、取得結果を端末にも保存する。
+          await saveEvents(dateKey, list);
+          return list;
+        }
       } catch(e) { console.warn("サーバー取得失敗、ローカルにフォールバック", e); }
     }
 
@@ -139,13 +160,26 @@ const Storage = (() => {
   }
 
   async function syncAllToServer() {
+    const dates = pendingDates();
+    const settingsPending = localStorage.getItem("pendingSettingsSync") === "1";
+    if (!dates.length && !settingsPending) { updateSyncStatus(); return true; }
     if (!hasServer() || !navigator.onLine) { queueSync(); return false; }
     try {
-      const res = await fetch(`${SERVER_URL}/api/events-bulk`, {
-        method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ events: await getAllEvents() })
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      for (const dateKey of dates) {
+        const list = await getLocalEvents(dateKey);
+        const res = await fetch(`${SERVER_URL}/api/events/${dateKey}`, {
+          method: "PUT", headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ events: list })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        clearDatePending(dateKey);
+      }
+      if (settingsPending) {
+        const settings = JSON.parse(localStorage.getItem("userSettings") || "{}");
+        const response = await sendUserSettings(settings);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        localStorage.removeItem("pendingSettingsSync");
+      }
       localStorage.removeItem("pendingServerSync"); updateSyncStatus(); return true;
     } catch(e) { queueSync(); return false; }
   }
@@ -155,12 +189,7 @@ const Storage = (() => {
     list.splice(idx, 1);
     await saveEvents(dateKey, list);
     // サーバー同期
-    if (hasServer()) {
-      fetch(`${SERVER_URL}/api/events/${dateKey}/${idx}`, {
-        method: "DELETE",
-        headers: authHeaders()
-      }).then(r => { if (!r.ok) queueSync(); }).catch(queueSync);
-    } else if (SERVER_URL) { queueSync(); }
+    await syncDate(dateKey, list);
   }
 
   async function addEvent(dateKey, event) {
@@ -168,13 +197,7 @@ const Storage = (() => {
     list.push(event);
     await saveEvents(dateKey, list);
     // サーバー同期
-    if (hasServer()) {
-      fetch(`${SERVER_URL}/api/events/${dateKey}`, {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify(event)
-      }).then(r => { if (!r.ok) queueSync(); }).catch(queueSync);
-    } else if (SERVER_URL) { queueSync(); }
+    await syncDate(dateKey, list);
   }
 
   async function updateEvent(dateKey, idx, event) {
@@ -182,13 +205,31 @@ const Storage = (() => {
     list[idx] = event;
     await saveEvents(dateKey, list);
     // サーバー同期
-    if (hasServer()) {
-      fetch(`${SERVER_URL}/api/events/${dateKey}/${idx}`, {
-        method: "PUT",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify(event)
-      }).then(r => { if (!r.ok) queueSync(); }).catch(queueSync);
-    } else if (SERVER_URL) { queueSync(); }
+    await syncDate(dateKey, list);
+  }
+
+  async function getLocalEvents(dateKey) {
+    await open();
+    if (useMemory || !db) return (memStore["ev_" + dateKey] || []).slice();
+    return new Promise(resolve => {
+      const req = db.transaction("events", "readonly").objectStore("events").get(dateKey);
+      req.onsuccess = () => resolve(req.result ? req.result.list : []);
+      req.onerror = () => resolve([]);
+    });
+  }
+
+  async function syncDate(dateKey, list) {
+    markDatePending(dateKey);
+    if (!hasServer() || !navigator.onLine) return false;
+    try {
+      const response = await fetch(`${SERVER_URL}/api/events/${dateKey}`, {
+        method: "PUT", headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ events: list })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      clearDatePending(dateKey);
+      return true;
+    } catch (_) { queueSync(); return false; }
   }
 
   function dateKey(d) {
@@ -241,16 +282,43 @@ const Storage = (() => {
   }
 
   // ── ユーザー設定の同期 ────────────────────────────────
+  function sendUserSettings(settings) {
+    return fetch(`${SERVER_URL}/api/user-settings`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(settings)
+    });
+  }
+
+  async function loadUserSettings() {
+    const local = JSON.parse(localStorage.getItem("userSettings") || "{}");
+    if (!hasServer() || !navigator.onLine) return local;
+    try {
+      const response = await fetch(`${SERVER_URL}/api/user-settings`, { headers: authHeaders() });
+      if (!response.ok) return local;
+      const serverSettings = await response.json();
+      const merged = { ...local, ...serverSettings };
+      localStorage.setItem("userSettings", JSON.stringify(merged));
+      if (merged.pref) localStorage.setItem("pref", merged.pref);
+      if (merged.region && merged.pref) localStorage.setItem("region_" + merged.pref, merged.region);
+      if (merged.locationMode) localStorage.setItem("locationMode", merged.locationMode);
+      if (merged.gpsLat != null) localStorage.setItem("gpsLat", merged.gpsLat);
+      if (merged.gpsLon != null) localStorage.setItem("gpsLon", merged.gpsLon);
+      return merged;
+    } catch (_) { return local; }
+  }
+
   async function syncUserSettings(settings) {
     localStorage.setItem("userSettings", JSON.stringify(settings));
-    if (!hasServer()) return;
+    localStorage.setItem("pendingSettingsSync", "1"); queueSync();
+    if (!hasServer() || !navigator.onLine) return false;
     try {
-      await fetch(`${SERVER_URL}/api/user-settings`, {
-        method: "POST",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify(settings)
-      });
-    } catch(e) { console.warn("設定同期失敗", e); }
+      const response = await sendUserSettings(settings);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      localStorage.removeItem("pendingSettingsSync");
+      if (!pendingDates().length) localStorage.removeItem("pendingServerSync");
+      updateSyncStatus(); return true;
+    } catch(e) { console.warn("設定同期失敗", e); return false; }
   }
 
   async function testLineNotification() {
@@ -327,7 +395,7 @@ const Storage = (() => {
   return {
     open, getEvents, getAllEvents, saveEvents, deleteEvent, addEvent, addRecurringEvent, updateEvent,
     saveGarbageSchedule, getGarbageSchedule,
-    syncUserSettings, syncAllToServer, testLineNotification, exportData, importData,
+    loadUserSettings, syncUserSettings, syncAllToServer, testLineNotification, exportData, importData,
     getLineIdToken, hasServer, updateSyncStatus
   };
 })();

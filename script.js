@@ -9,6 +9,10 @@
   // IndexedDB を開く（エラーでも続行）
   try { await Storage.open(); } catch(e) { console.warn("Storage open failed:", e); }
 
+  // ログイン済みなら、端末を替えてもサーバー側の設定を復元する。
+  try { await Storage.loadUserSettings(); } catch(e) { console.warn("設定の復元に失敗:", e); }
+  try { await Storage.syncAllToServer(); } catch(e) { console.warn("未同期データの送信に失敗:", e); }
+
   // 保存・LINE連携・位置情報について最初に説明し、同意後だけ利用する。
   if (localStorage.getItem("consentData") !== "yes") {
     const modal = document.getElementById("consentModal");

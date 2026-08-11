@@ -94,26 +94,28 @@ function saveData(data) {
   if (!pool) {
     try {
       saveFile(snapshot);
+      return Promise.resolve();
     } catch (error) {
       console.error("ファイルデータ保存エラー:", error.message);
+      return Promise.reject(error);
     }
-    return Promise.resolve();
   }
 
   // 複数の保存が同時に来ても、登録順に書き込む。
-  saveQueue = saveQueue
-    .then(() => pool.query(
+  const operation = saveQueue.then(() => pool.query(
       `INSERT INTO ready2go_state (state_key, state_data, updated_at)
        VALUES ($1, $2::jsonb, NOW())
        ON CONFLICT (state_key)
        DO UPDATE SET state_data = EXCLUDED.state_data, updated_at = NOW()`,
       ["main", JSON.stringify(snapshot)]
-    ))
-    .catch(error => {
-      console.error("PostgreSQL保存エラー:", error.message);
-    });
+    ));
 
-  return saveQueue;
+  // 失敗を呼び出し元へ返しつつ、次の保存は続けられるようにする。
+  saveQueue = operation.catch(error => {
+    console.error("PostgreSQL保存エラー:", error.message);
+  });
+
+  return operation;
 }
 
 function getStorageMode() {
@@ -121,4 +123,3 @@ function getStorageMode() {
 }
 
 module.exports = { loadData, saveData, getStorageMode };
-
