@@ -274,6 +274,72 @@ app.post("/api/user-settings", requireUserAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── ユーザー本人のバックアップ・復元 ─────────────────────
+const BACKUP_SETTING_KEYS = [
+  "notifyEnabled", "todayNotifyTimes", "previousNotifyTimes", "pauseUntil",
+  "garbageReminder", "garbageReminderTime", "pref", "region", "area",
+  "locationMode", "gpsLat", "gpsLon", "garbageSchedule"
+];
+
+function backupSettings(user = {}) {
+  return Object.fromEntries(BACKUP_SETTING_KEYS
+    .filter(key => user[key] !== undefined)
+    .map(key => [key, user[key]]));
+}
+
+function sanitizeBackupEvents(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("予定データの形式が正しくありません");
+  }
+  const result = Object.create(null);
+  const entries = Object.entries(value);
+  if (entries.length > 1500) throw new Error("予定の日付数が多すぎます");
+  for (const [dateKey, list] of entries) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || !Array.isArray(list) || list.length > 200) {
+      throw new Error("予定データの内容が正しくありません");
+    }
+    result[dateKey] = list.map(event => {
+      if (!event || typeof event !== "object" || typeof event.title !== "string") {
+        throw new Error("予定データの内容が正しくありません");
+      }
+      return JSON.parse(JSON.stringify(event));
+    });
+  }
+  return result;
+}
+
+app.get("/api/backup", requireUserAuth, (req, res) => {
+  res.json({
+    app: "Ready2Go",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    events: store.events[req.userId] || {},
+    settings: backupSettings(store.users[req.userId]),
+  });
+});
+
+app.post("/api/restore", requireUserAuth, (req, res) => {
+  try {
+    const backup = req.body;
+    if (!backup || backup.app !== "Ready2Go" || Number(backup.version) !== 1) {
+      return res.status(400).json({ error: "Ready2Goのバックアップファイルではありません" });
+    }
+    const restoredEvents = sanitizeBackupEvents(backup.events);
+    const restoredSettings = backup.settings && typeof backup.settings === "object"
+      ? Object.fromEntries(BACKUP_SETTING_KEYS
+        .filter(key => backup.settings[key] !== undefined)
+        .map(key => [key, JSON.parse(JSON.stringify(backup.settings[key]))]))
+      : {};
+
+    store.events[req.userId] = restoredEvents;
+    Object.assign(store.users[req.userId], restoredSettings);
+    saveData(store);
+    res.json({ ok: true, restoredDates: Object.keys(restoredEvents).length });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "復元できませんでした" });
+  }
+});
+
 // 自治体の公式情報だけを候補として返す。APIキーはブラウザへ渡さない。
 app.post("/api/garbage-schedule", requireUserAuth, async (req, res) => {
   const pref = String(req.body?.pref || "").trim();

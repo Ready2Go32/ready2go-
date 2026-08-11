@@ -121,6 +121,23 @@ const Storage = (() => {
     });
   }
 
+  async function replaceAllEvents(events) {
+    await open();
+    if (useMemory || !db) {
+      for (const key of Object.keys(memStore)) if (key.startsWith("ev_")) delete memStore[key];
+      for (const [key, list] of Object.entries(events || {})) memStore["ev_" + key] = list;
+      return;
+    }
+    return new Promise(resolve => {
+      const tx = db.transaction("events", "readwrite");
+      const store = tx.objectStore("events");
+      store.clear();
+      for (const [dateKey, list] of Object.entries(events || {})) store.put({ dateKey, list });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  }
+
   async function syncAllToServer() {
     if (!hasServer() || !navigator.onLine) { queueSync(); return false; }
     try {
@@ -243,15 +260,49 @@ const Storage = (() => {
   }
 
   async function exportData() {
-    const data = {
-      exportedAt: new Date().toISOString(), events: await getAllEvents(),
-      settings: JSON.parse(localStorage.getItem("userSettings") || "{}"),
-      location: { pref: localStorage.getItem("pref"), mode: localStorage.getItem("locationMode") || "address" }
-    };
+    let data;
+    if (hasServer()) {
+      const response = await fetch(`${SERVER_URL}/api/backup`, { headers: authHeaders() });
+      if (!response.ok) throw new Error("サーバーからバックアップを取得できませんでした");
+      data = await response.json();
+    } else {
+      data = {
+        app: "Ready2Go", version: 1, exportedAt: new Date().toISOString(),
+        events: await getAllEvents(),
+        settings: JSON.parse(localStorage.getItem("userSettings") || "{}")
+      };
+    }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
     a.download = `ready2go-backup-${new Date().toISOString().slice(0,10)}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  async function importData(file) {
+    const backup = JSON.parse(await file.text());
+    if (!backup || backup.app !== "Ready2Go" || Number(backup.version) !== 1
+      || !backup.events || typeof backup.events !== "object") {
+      throw new Error("Ready2Goのバックアップファイルではありません");
+    }
+    if (hasServer()) {
+      const response = await fetch(`${SERVER_URL}/api/restore`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(backup)
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || "復元できませんでした");
+      }
+    }
+    await replaceAllEvents(backup.events);
+    if (backup.settings && typeof backup.settings === "object") {
+      localStorage.setItem("userSettings", JSON.stringify(backup.settings));
+      if (backup.settings.pref) localStorage.setItem("pref", backup.settings.pref);
+      if (backup.settings.locationMode) localStorage.setItem("locationMode", backup.settings.locationMode);
+    }
+    localStorage.removeItem("pendingServerSync");
+    return true;
   }
 
   window.addEventListener("online", syncAllToServer);
@@ -260,7 +311,7 @@ const Storage = (() => {
   return {
     open, getEvents, getAllEvents, saveEvents, deleteEvent, addEvent, addRecurringEvent, updateEvent,
     saveGarbageSchedule, getGarbageSchedule,
-    syncUserSettings, syncAllToServer, testLineNotification, exportData,
+    syncUserSettings, syncAllToServer, testLineNotification, exportData, importData,
     getLineIdToken, hasServer, updateSyncStatus
   };
 })();

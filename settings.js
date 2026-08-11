@@ -145,7 +145,24 @@ const Settings = (() => {
       try { await Storage.testLineNotification(); alert("LINEへテスト通知を送りました"); }
       catch(e) { alert(e.message); }
     });
-    document.getElementById("exportBtn")?.addEventListener("click", () => Storage.exportData());
+    document.getElementById("exportBtn")?.addEventListener("click", async () => {
+      try { await Storage.exportData(); alert("バックアップを書き出しました"); }
+      catch(e) { alert(e.message); }
+    });
+    const importFile = document.getElementById("importFile");
+    document.getElementById("importBtn")?.addEventListener("click", () => {
+      if (confirm("現在の予定と設定を、バックアップの内容で置き換えます。続けますか？")) importFile?.click();
+    });
+    importFile?.addEventListener("change", async () => {
+      const file = importFile.files?.[0];
+      if (!file) return;
+      try {
+        await Storage.importData(file);
+        alert("バックアップを復元しました。画面を再読み込みします");
+        location.reload();
+      } catch(e) { alert(e.message); }
+      finally { importFile.value = ""; }
+    });
     locationMode?.addEventListener("change", () => {
       localStorage.setItem("locationMode", locationMode.value);
       if (locationMode.value === "address") {
