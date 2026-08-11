@@ -536,6 +536,7 @@ select:focus, input[type="date"]:focus { border-color: var(--accent); }
 /* イベント */
 .event {
   color: white;
+  background: var(--accent);
   font-weight: 500;
   padding: 4px 7px;
   border-radius: 6px;
@@ -546,7 +547,10 @@ select:focus, input[type="date"]:focus { border-color: var(--accent); }
   box-shadow: 0 1px 3px rgba(0,0,0,.2);
   cursor: pointer;
 }
-.event-text { flex-grow: 1; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-text { flex-grow: 1; min-width:0; cursor:pointer; display:flex; gap:5px; align-items:baseline; overflow:hidden; }
+.event-time { flex:none; font-size:.86em; font-weight:700; opacity:.9; }
+.event-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.month-more { min-height:24px; padding:1px 3px; border:0; background:transparent; color:var(--accent); font:700 10px var(--font); text-align:left; cursor:pointer; }
 .del-btn {
   cursor: pointer;
   margin-left: 5px;
@@ -638,6 +642,9 @@ select:focus, input[type="date"]:focus { border-color: var(--accent); }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 .form-actions { display: flex; gap: 10px; margin-top: 20px; }
+.time-input-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.time-input-row input { width:100%; min-width:0; }
+.form-help { display:block; margin-top:6px; color:var(--text-3); font-size:11px; line-height:1.5; }
 .btn-primary {
   flex: 1; padding: 11px;
   background: var(--accent); color: white;
@@ -668,10 +675,18 @@ select:focus, input[type="date"]:focus { border-color: var(--accent); }
   .summary-card { padding:10px; gap:8px; min-height:82px; }
   .summary-icon { width:34px; height:34px; font-size:18px; }
   .calendar-grid.view-month { grid-template-columns:repeat(7,minmax(0,1fr)); gap:3px; }
-  .calendar-grid.view-month .day { min-height:72px; padding:4px; border-radius:8px; }
+  .calendar-grid.view-month .day { min-height:112px; padding:4px; border-radius:8px; gap:3px; }
   .calendar-grid.view-month .day-weather,.calendar-grid.view-month .day-name { display:none; }
-  .calendar-grid.view-month .event { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .calendar-grid.view-month .day-header { margin-bottom:1px; }
+  .calendar-grid.view-month .day-date { margin:0 auto; font-size:11px; font-weight:700; }
+  .calendar-grid.view-month .today-badge { display:none; }
+  .calendar-grid.view-month .event { padding:3px; min-height:31px; align-items:flex-start; border-radius:4px; box-shadow:none; }
+  .calendar-grid.view-month .event-text { display:block; line-height:1.15; }
+  .calendar-grid.view-month .event-time,.calendar-grid.view-month .event-title { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .calendar-grid.view-month .event-time { font-size:8px; }
+  .calendar-grid.view-month .event-title { font-size:9px; margin-top:1px; }
   .calendar-grid.view-month .garbage-tag { max-width:22px; overflow:hidden; white-space:nowrap; }
+  .time-input-row { grid-template-columns:1fr; }
   .hourly-section { margin-top:14px; }
   .app-title { display: none; }
   .location-selects { flex-wrap: wrap; justify-content: center; }

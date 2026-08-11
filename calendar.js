@@ -116,26 +116,36 @@ const Calendar = (() => {
       }
 
       // 予定一覧
-      const events = eventLists[dateIndex];
-      events.sort((a, b) => a.time.localeCompare(b.time));
-      events.forEach((ev, idx) => {
+      const events = eventLists[dateIndex]
+        .map((ev, originalIdx) => ({ ev, originalIdx }))
+        .sort((a, b) => String(a.ev.time || "").localeCompare(String(b.ev.time || "")));
+      const visibleEvents = viewMode === "month" ? events.slice(0, 3) : events;
+      visibleEvents.forEach(({ ev, originalIdx }) => {
         const div = document.createElement("div");
-        div.className = `event ${ev.category}`;
+        div.className = "event";
         div.innerHTML =
-          `<span class="event-text">${ev.time} ${ev.title}</span>`
+          `<span class="event-text"><span class="event-time">${escapeHtml(ev.time || "--:--")}</span><span class="event-title">${escapeHtml(ev.title)}</span></span>`
           + `<span class="del-btn" title="削除">✕</span>`;
 
-        div.querySelector(".event-text").onclick = e => {
+        div.onclick = e => {
           e.stopPropagation();
-          openModal(key, idx);
+          openModal(key, originalIdx);
         };
         div.querySelector(".del-btn").onclick = async e => {
           e.stopPropagation();
-          await Storage.deleteEvent(key, idx);
+          await Storage.deleteEvent(key, originalIdx);
           draw();
         };
         box.appendChild(div);
       });
+      if (viewMode === "month" && events.length > visibleEvents.length) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "month-more";
+        more.textContent = `ほか${events.length - visibleEvents.length}件`;
+        more.onclick = e => { e.stopPropagation(); setView("list"); weekStart = new Date(d); draw(); };
+        box.appendChild(more);
+      }
 
       box.onclick = () => openModal(key);
       calEl.appendChild(box);
@@ -148,7 +158,7 @@ const Calendar = (() => {
     const isEdit  = eventIdx !== null;
     const current = isEdit
       ? list[eventIdx]
-      : { title: "", time: "09:00", category: "school", repeat: "none", repeatUntil: dateKey };
+      : { title: "", time: "09:00", repeat: "none", repeatUntil: dateKey };
 
     const overlay = document.createElement("div");
     overlay.className = "modal";
@@ -166,21 +176,13 @@ const Calendar = (() => {
           <label>日付</label>
           <input type="date" id="m-date" value="${dateKey}">
         </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>時間</label>
-            <select id="m-time"></select>
+        <div class="form-group">
+          <label>時間</label>
+          <div class="time-input-row">
+            <input type="time" id="m-time" value="${escapeHtml(current.time || "09:00")}" step="300" aria-label="時計から時間を選択">
+            <input type="text" id="m-time-digits" value="${escapeHtml(String(current.time || "09:00").replace(":", ""))}" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="例 0900" aria-label="時間を数字4桁で入力">
           </div>
-          <div class="form-group">
-            <label>カテゴリ</label>
-            <select id="m-cat">
-              <option value="school"   ${current.category==="school"   ?"selected":""}>🏫 学校</option>
-              <option value="work"     ${current.category==="work"     ?"selected":""}>💼 仕事</option>
-              <option value="play"     ${current.category==="play"     ?"selected":""}>🎮 遊び</option>
-              <option value="hospital" ${current.category==="hospital" ?"selected":""}>🏥 病院</option>
-              <option value="other"    ${current.category==="other"    ?"selected":""}>📌 その他</option>
-            </select>
-          </div>
+          <small class="form-help">時計から選ぶか、数字4桁で入力（例：930 → 09:30、1830 → 18:30）</small>
         </div>
         <div class="form-row">
           <div class="form-group"><label>繰り返し</label><select id="m-repeat">
@@ -197,16 +199,17 @@ const Calendar = (() => {
 
     document.body.appendChild(overlay);
 
-    const tmSel = overlay.querySelector("#m-time");
+    const tmInput = overlay.querySelector("#m-time");
+    const tmDigits = overlay.querySelector("#m-time-digits");
     overlay.querySelector("#m-repeat").value = current.repeat || "none";
-    for (let h = 0; h <= 23; h++) {
-      const t = String(h).padStart(2, "0") + ":00";
-      const opt = document.createElement("option");
-      opt.value = t;
-      opt.textContent = t;
-      if (t === current.time) opt.selected = true;
-      tmSel.appendChild(opt);
-    }
+    tmDigits.addEventListener("input", () => {
+      tmDigits.value = tmDigits.value.replace(/\D/g, "").slice(0, 4);
+      const normalized = normalizeTime(tmDigits.value);
+      if (normalized) tmInput.value = normalized;
+    });
+    tmInput.addEventListener("input", () => {
+      if (tmInput.value) tmDigits.value = tmInput.value.replace(":", "");
+    });
 
     overlay.querySelector("#m-cancel").onclick = () => overlay.remove();
     overlay.querySelector("#cardClose").onclick = () => overlay.remove();
@@ -215,8 +218,7 @@ const Calendar = (() => {
     overlay.querySelector("#m-save").onclick = async () => {
       const newTitle    = overlay.querySelector("#m-title").value.trim();
       const newDate     = overlay.querySelector("#m-date").value;
-      const newTime     = tmSel.value;
-      const newCategory = overlay.querySelector("#m-cat").value;
+      const newTime     = normalizeTime(tmDigits.value) || tmInput.value;
       const repeat = overlay.querySelector("#m-repeat").value;
       const repeatUntil = overlay.querySelector("#m-repeat-until").value;
 
@@ -225,8 +227,13 @@ const Calendar = (() => {
         overlay.querySelector("#m-title").focus();
         return;
       }
+      if (!newTime) {
+        tmDigits.classList.add("input-error");
+        tmDigits.focus();
+        return;
+      }
 
-      const newEvent = { title: newTitle, time: newTime, category: newCategory, repeat, repeatUntil };
+      const newEvent = { title: newTitle, time: newTime, repeat, repeatUntil };
 
       if (isEdit && newDate !== dateKey) {
         await Storage.deleteEvent(dateKey, eventIdx);
@@ -248,6 +255,16 @@ const Calendar = (() => {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  function normalizeTime(value) {
+    const digits = String(value || "").replace(/\D/g, "");
+    const padded = digits.length === 3 ? "0" + digits : digits;
+    if (padded.length !== 4) return "";
+    const hour = Number(padded.slice(0, 2));
+    const minute = Number(padded.slice(2));
+    if (hour > 23 || minute > 59) return "";
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   }
 
   // ── 通知チェック ──────────────────────────────────────

@@ -1,4 +1,4 @@
-const CACHE = "ready2go-v4";
+const CACHE = "ready2go-v5";
 const APP_FILES = [
   "./", "./index.html", "./style.css", "./storage.js", "./garbage.js",
   "./settings.js", "./weather.js", "./calendar.js", "./dashboard.js",
@@ -6,9 +6,13 @@ const APP_FILES = [
   "./privacy.html", "./terms.html",
   "./manifest.json", "./app-icon.svg", "./icon-192.png", "./icon-512.png"
 ];
-self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(APP_FILES))));
+self.addEventListener("install", event => event.waitUntil(
+  caches.open(CACHE).then(cache => cache.addAll(APP_FILES)).then(() => self.skipWaiting())
+));
 self.addEventListener("activate", event => event.waitUntil(
-  caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+  caches.keys()
+    .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    .then(() => self.clients.claim())
 ));
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
