@@ -146,7 +146,12 @@ const Settings = (() => {
       catch(e) { alert(e.message); }
     });
     document.getElementById("exportBtn")?.addEventListener("click", async () => {
-      try { await Storage.exportData(); alert("バックアップを書き出しました"); }
+      try {
+        const method = await Storage.exportData();
+        alert(method === "shared"
+          ? "共有先へバックアップを保存しました"
+          : "バックアップをダウンロードしました");
+      }
       catch(e) { alert(e.message); }
     });
     const importFile = document.getElementById("importFile");

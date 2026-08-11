@@ -272,10 +272,26 @@ const Storage = (() => {
         settings: JSON.parse(localStorage.getItem("userSettings") || "{}")
       };
     }
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const filename = `ready2go-backup-${new Date().toISOString().slice(0,10)}.json`;
+    const content = JSON.stringify(data, null, 2);
+    const file = new File([content], filename, { type: "application/json" });
+
+    // スマホのLINE内ブラウザでは通常ダウンロードが保存されないことがある。
+    // Web Share対応端末では共有画面から「ファイルに保存」を選べるようにする。
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({
+        title: "Ready2Goバックアップ",
+        text: "Ready2Goの予定・設定バックアップです",
+        files: [file]
+      });
+      return "shared";
+    }
+
+    const blob = new Blob([content], { type: "application/json" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-    a.download = `ready2go-backup-${new Date().toISOString().slice(0,10)}.json`; a.click();
+    a.download = filename; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    return "downloaded";
   }
 
   async function importData(file) {
