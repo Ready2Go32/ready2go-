@@ -445,13 +445,48 @@ app.post("/api/restore", requireUserAuth, (req, res) => {
   }
 });
 
+function garbageScheduleKey(pref, region, area = "") {
+  return [pref, region, area].map(value => String(value || "").trim()).join("::");
+}
+
+function cachedGarbageSchedule(pref, region, area) {
+  const schedules = store.garbageSchedules || (store.garbageSchedules = {});
+  // 町名まで一致するものを優先し、自治体全域データにもフォールバックする。
+  return schedules[garbageScheduleKey(pref, region, area)]
+    || schedules[garbageScheduleKey(pref, region, "")]
+    || null;
+}
+
+// 住所選択時の自動検索用。共有DBに確認済み情報があればAIを使わず返す。
+app.get("/api/garbage-schedule", requireUserAuth, (req, res) => {
+  const pref = String(req.query.pref || "").trim();
+  const region = String(req.query.region || "").trim();
+  const area = String(req.query.area || "").trim();
+  if (!pref || !region || pref.length > 10 || region.length > 30 || area.length > 50) {
+    return res.status(400).json({ error: "地域を正しく選択してください" });
+  }
+  const schedule = cachedGarbageSchedule(pref, region, area);
+  if (!schedule) return res.status(404).json({ error: "この地域はまだ自動登録されていません" });
+  res.json({ ...schedule, _fromSharedDatabase: true });
+});
+
 // 自治体の公式情報だけを候補として返す。APIキーはブラウザへ渡さない。
 app.post("/api/garbage-schedule", requireUserAuth, async (req, res) => {
   const pref = String(req.body?.pref || "").trim();
   const region = String(req.body?.region || "").trim();
   const area = String(req.body?.area || "").trim();
+  const forceRefresh = req.body?.forceRefresh === true;
   if (!pref || !region || pref.length > 10 || region.length > 30 || area.length > 50) {
     return res.status(400).json({ error: "地域を正しく選択してください" });
+  }
+  const alreadyRegistered = forceRefresh ? null : cachedGarbageSchedule(pref, region, area);
+  if (alreadyRegistered) {
+    store.users[req.userId].garbageSchedule = alreadyRegistered;
+    store.users[req.userId].pref = pref;
+    store.users[req.userId].region = region;
+    store.users[req.userId].area = area;
+    await saveData(store);
+    return res.json({ ...alreadyRegistered, _fromSharedDatabase: true });
   }
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: "ごみ情報検索APIが設定されていません" });
@@ -495,6 +530,11 @@ dowは0=日〜6=土、weekは毎週ならnull、第1・第3などの場合は数
     }
     schedule._verifiedOfficial = true;
     schedule.checkedAt = new Date().toISOString();
+    schedule.pref = pref;
+    schedule.region = region;
+    schedule.area = area;
+    store.garbageSchedules ||= {};
+    store.garbageSchedules[garbageScheduleKey(pref, region, area)] = schedule;
     store.users[req.userId].garbageSchedule = schedule;
     store.users[req.userId].pref = pref;
     store.users[req.userId].region = region;

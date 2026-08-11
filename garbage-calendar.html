@@ -333,13 +333,13 @@
     <datalist id="gc-region-list"></datalist>
     <input id="gc-area" class="gc-region-input gc-area-input" placeholder="町名・地区（任意、例：西新宿）" autocomplete="address-level3">
     <button id="gc-gps-btn" class="gc-gps-btn">📡 GPS</button>
-    <button id="gc-search-btn" class="gc-search-btn">🔍 AIで調べる</button>
-    <div class="gc-location-help">候補を選ぶか直接入力できます。地区で収集日が違う場合は町名・地区も入力してください</div>
+    <button id="gc-search-btn" class="gc-search-btn">🔄 公式情報を再取得</button>
+    <div class="gc-location-help">住所を選ぶと自動で検索します。地区で収集日が違う場合は町名・地区も入力してください</div>
   </div>
 
   <div class="gc-warning">⚠️ 祝日・年末年始・荒天時は収集日が変更される場合があります。Ready2Goの表示だけで判断せず、登録した自治体公式ページも確認してください。</div>
 
-  <section class="gc-manual-box">
+  <section class="gc-manual-box" id="gc-manual-box" style="display:none">
     <h2>収集曜日を自分で設定</h2>
     <p>公式情報を自動取得できない地域でも使えます。同じごみを別の曜日で追加することもできます。</p>
     <div class="gc-manual-grid">
@@ -367,7 +367,7 @@
   <div class="gc-ai-area" id="gc-ai-area">
     <div class="gc-placeholder">
       <div class="gc-placeholder-icon">🗑️</div>
-      <div>地域を選択して「AIで調べる」を押すと<br>ゴミ収集スケジュールをAIが検索・整理します</div>
+      <div>都道府県と市区町村を選ぶと<br>公式のゴミ収集情報を自動で探します</div>
     </div>
   </div>
 
@@ -502,7 +502,7 @@
     );
   };
 
-  // ── AI検索 ──
+  // ── 公式情報の自動検索 ──
   let currentSchedule = null;
   let manualTypes = [];
   let displayMonth = new Date();
@@ -510,7 +510,7 @@
 
   document.getElementById("gc-search-btn").onclick = () => searchGarbage();
 
-  // 地域が既に選択されていれば、保存済みデータだけを読み込む。
+  // 地域が既に選択されていれば、保存済みまたは共有DBの情報を自動で読み込む。
   if (regionSel.value) loadSavedSchedule();
 
   regionSel.addEventListener("change", loadSavedSchedule);
@@ -523,12 +523,16 @@
     currentSchedule = null;
     manualTypes = [];
     renderManualRules();
+    document.getElementById("gc-manual-box").style.display = "none";
     document.getElementById("gc-calendar-section").style.display = "none";
     document.getElementById("gc-ai-area").innerHTML = '<div class="gc-placeholder"><div class="gc-placeholder-icon">🗑️</div><div>保存済み情報がありません。<br>公式情報を調べるか、収集曜日を自分で設定してください。</div></div>';
     if (!region) return;
     let weekly = await Storage.getGarbageSchedule(Garbage.makeKey(pref, region, area));
     if (!weekly) weekly = await Storage.getGarbageSchedule(`${pref}::${region}`);
-    if (!weekly) return;
+    if (!weekly) {
+      await resolveScheduleAutomatically(pref, region, area);
+      return;
+    }
     const garbageTypes = Object.entries(weekly)
       .filter(([, info]) => info && Array.isArray(info.days))
       .map(([name, info]) => ({ name, color:info.color, icon:info.icon, days:info.days, schedule:describeDays(info.days) }));
@@ -542,7 +546,10 @@
       _verifiedOfficial:weekly._verifiedOfficial === true,
       _manual:weekly._manual === true
     };
-    if (weekly._manual) manualTypes = garbageTypes.map(item => ({ ...item, days:item.days.map(rule => ({...rule})) }));
+    if (weekly._manual) {
+      manualTypes = garbageTypes.map(item => ({ ...item, days:item.days.map(rule => ({...rule})) }));
+      document.getElementById("gc-manual-box").style.display = "block";
+    }
     document.getElementById("gc-manual-source").value = weekly._sourceUrl || "";
     renderManualRules();
     renderAIResult(pref, region + (area ? ` ${area}` : ""), currentSchedule);
@@ -572,21 +579,75 @@
     document.getElementById("gc-calendar-section").style.display = "none";
 
     try {
-      const schedule = await fetchScheduleWithAI(pref, region, area);
+      const schedule = await fetchScheduleWithAI(pref, region, area, true);
       currentSchedule = schedule;
       renderAIResult(pref, region + (area ? ` ${area}` : ""), schedule);
       renderCalendar();
       document.getElementById("gc-calendar-section").style.display = "block";
     } catch(e) {
       aiArea.innerHTML = `<div style="color:var(--red);font-size:14px;">⚠️ 取得に失敗しました: ${e.message}</div>`;
+      document.getElementById("gc-manual-box").style.display = "block";
     }
   }
 
-  async function fetchScheduleWithAI(pref, region, area) {
+  async function resolveScheduleAutomatically(pref, region, area) {
+    if (!pref || !region) return;
+    const aiArea = document.getElementById("gc-ai-area");
+    const idToken = Storage.getLineIdToken();
+    if (!idToken) {
+      aiArea.innerHTML = '<div class="gc-placeholder"><div class="gc-placeholder-icon">🔐</div><div>自動取得にはLINEログインが必要です。<br>ログイン後にもう一度開くか、下の手動設定を利用してください。</div></div>';
+      document.getElementById("gc-manual-box").style.display = "block";
+      return;
+    }
+    aiArea.innerHTML = '<div class="gc-ai-loading"><div class="gc-spinner"></div>登録済みの自治体情報を確認中…</div>';
+    try {
+      const query = new URLSearchParams({ pref, region, area });
+      const response = await fetch(`${SERVER_URL}/api/garbage-schedule?${query}`, {
+        headers:{ "Authorization":`Bearer ${idToken}` }
+      });
+      if (response.ok) {
+        const schedule = await response.json();
+        await applyOfficialSchedule(pref, region, area, schedule);
+        return;
+      }
+      if (response.status !== 404) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || "登録情報を確認できませんでした");
+      }
+      aiArea.innerHTML = '<div class="gc-ai-loading"><div class="gc-spinner"></div>未登録地域のため自治体公式情報を検索中…</div>';
+      const schedule = await fetchScheduleWithAI(pref, region, area);
+      await applyOfficialSchedule(pref, region, area, schedule, false);
+    } catch (error) {
+      aiArea.innerHTML = `<div class="gc-placeholder"><div class="gc-placeholder-icon">📌</div><div>この地域はまだ自動設定できませんでした。<br>${escapeText(error.message)}<br>下の手動設定を利用してください。</div></div>`;
+      document.getElementById("gc-manual-box").style.display = "block";
+    }
+  }
+
+  async function applyOfficialSchedule(pref, region, area, schedule, persist = true) {
+    if (!schedule?._verifiedOfficial || !Array.isArray(schedule.garbageTypes) || !schedule.garbageTypes.length) {
+      throw new Error("確認済みの公式情報がありません");
+    }
+    const weekly = Object.fromEntries(schedule.garbageTypes.map(g => [g.name, {
+      color:g.color, icon:g.icon, days:g.days
+    }]));
+    weekly._verifiedOfficial = true;
+    weekly._sourceUrl = schedule.sourceUrl || "";
+    weekly._checkedAt = schedule.checkedAt || "";
+    weekly._note = schedule.note || "";
+    await Storage.saveGarbageSchedule(Garbage.makeKey(pref, region, area), weekly);
+    if (persist) await Storage.syncUserSettings({ pref, region, area, garbageSchedule:schedule });
+    currentSchedule = schedule;
+    document.getElementById("gc-manual-box").style.display = "none";
+    renderAIResult(pref, region + (area ? ` ${area}` : ""), schedule);
+    renderCalendar();
+    document.getElementById("gc-calendar-section").style.display = "block";
+  }
+
+  async function fetchScheduleWithAI(pref, region, area, forceRefresh = false) {
     // まずローカルキャッシュを確認
     const cacheKey = `gc_ai_${pref}_${region}_${area || "all"}`;
     const cached = localStorage.getItem(cacheKey);
-    if (cached) {
+    if (cached && !forceRefresh) {
       try {
         const parsed = JSON.parse(cached);
         if (parsed._verifiedOfficial === true && parsed._ts
@@ -612,7 +673,7 @@
         "Content-Type": "application/json",
         "Authorization": `Bearer ${idToken}`
       },
-      body: JSON.stringify({ pref, region, area })
+      body: JSON.stringify({ pref, region, area, forceRefresh })
     });
 
     const schedule = await res.json();
