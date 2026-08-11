@@ -120,6 +120,7 @@ const Settings = (() => {
     const garbageReminder = document.getElementById("garbageReminder");
     const garbageReminderTime = document.getElementById("garbageReminderTime");
     const locationMode = document.getElementById("locationMode");
+    const saveStatus = document.getElementById("notificationSaveStatus");
     const validTime = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value || "");
     todayTimes = todayTimes.filter(validTime).sort();
     previousTimes = previousTimes.filter(validTime).sort();
@@ -149,24 +150,58 @@ const Settings = (() => {
       });
     }
 
-    const renderToday = () => renderTimeList(todayList, todayTimes, time => {
-      todayTimes = todayTimes.filter(value => value !== time); renderToday();
-    });
-    const renderPrevious = () => renderTimeList(previousList, previousTimes, time => {
-      previousTimes = previousTimes.filter(value => value !== time); renderPrevious();
-    });
+    function renderToday() {
+      renderTimeList(todayList, todayTimes, time => {
+        todayTimes = todayTimes.filter(value => value !== time);
+        renderToday();
+        autoSaveNotifications();
+      });
+    }
+    function renderPrevious() {
+      renderTimeList(previousList, previousTimes, time => {
+        previousTimes = previousTimes.filter(value => value !== time);
+        renderPrevious();
+        autoSaveNotifications();
+      });
+    }
     renderToday();
     renderPrevious();
+
+    function notificationSettings() {
+      return {
+        todayNotifyTimes: todayTimes,
+        previousNotifyTimes: previousTimes,
+        pauseUntil: pauseUntil?.value || "",
+        garbageReminder: garbageReminder?.checked !== false,
+        garbageReminderTime: garbageReminderTime?.value || "20:00",
+        pref: document.getElementById("pref")?.value || "",
+        region: document.getElementById("region")?.value || "",
+        gpsLat: localStorage.getItem("gpsLat"),
+        gpsLon: localStorage.getItem("gpsLon")
+      };
+    }
+
+    let saveTimer = null;
+    function autoSaveNotifications() {
+      if (saveStatus) saveStatus.textContent = "保存中…";
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(async () => {
+        const synced = await Storage.syncUserSettings(notificationSettings());
+        if (saveStatus) saveStatus.textContent = synced
+          ? "✓ 自動保存しました"
+          : "端末に保存済み・オンライン時に同期します";
+      }, 350);
+    }
 
     document.getElementById("addTodayNotifyTime")?.addEventListener("click", () => {
       if (!validTime(todayPicker.value)) return alert("時計から時刻を選んでください");
       todayTimes = [...new Set([...todayTimes, todayPicker.value])].sort();
-      todayPicker.value = ""; renderToday();
+      todayPicker.value = ""; renderToday(); autoSaveNotifications();
     });
     document.getElementById("addPreviousNotifyTime")?.addEventListener("click", () => {
       if (!validTime(previousPicker.value)) return alert("時計から時刻を選んでください");
       previousTimes = [...new Set([...previousTimes, previousPicker.value])].sort();
-      previousPicker.value = ""; renderPrevious();
+      previousPicker.value = ""; renderPrevious(); autoSaveNotifications();
     });
     if (pauseUntil) pauseUntil.value = saved.pauseUntil || "";
     if (garbageReminder) garbageReminder.checked = saved.garbageReminder !== false;
@@ -179,18 +214,9 @@ const Settings = (() => {
     if (darkToggle)  darkToggle.onchange  = toggleDarkMode;
     if (resetBtn)    resetBtn.onclick     = resetBackground;
     if (gcBtn)       gcBtn.onclick        = openGarbageCalendar;
-    document.getElementById("saveNotifyBtn")?.addEventListener("click", async () => {
-      const settings = {
-        todayNotifyTimes: todayTimes, previousNotifyTimes: previousTimes,
-        pauseUntil: pauseUntil.value, garbageReminder: garbageReminder.checked,
-        garbageReminderTime: garbageReminderTime.value,
-        pref: document.getElementById("pref")?.value || "",
-        region: document.getElementById("region")?.value || "",
-        gpsLat: localStorage.getItem("gpsLat"), gpsLon: localStorage.getItem("gpsLon")
-      };
-      const synced = await Storage.syncUserSettings(settings);
-      alert(synced ? "通知設定を保存しました" : "端末に保存しました。オンラインになったときLINE設定へ同期します");
-    });
+    pauseUntil?.addEventListener("change", autoSaveNotifications);
+    garbageReminder?.addEventListener("change", autoSaveNotifications);
+    garbageReminderTime?.addEventListener("change", autoSaveNotifications);
     document.getElementById("testLineBtn")?.addEventListener("click", async () => {
       try { await Storage.testLineNotification(); alert("LINEへテスト通知を送りました"); }
       catch(e) { alert(e.message); }

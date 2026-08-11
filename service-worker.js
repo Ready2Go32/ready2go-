@@ -1,4 +1,4 @@
-const CACHE = "ready2go-v7";
+const CACHE = "ready2go-v8";
 const APP_FILES = [
   "./", "./index.html", "./style.css", "./storage.js", "./garbage.js",
   "./settings.js", "./weather.js", "./calendar.js", "./dashboard.js",
