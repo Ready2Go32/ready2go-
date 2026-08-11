@@ -96,7 +96,12 @@
     document.getElementById(btn.dataset.target)?.scrollIntoView({ behavior:"smooth" });
   }));
   document.getElementById("bottomGarbage")?.addEventListener("click", () => location.href = "garbage-calendar.html");
-  document.getElementById("bottomSettings")?.addEventListener("click", () => Settings.togglePanel());
+  document.getElementById("bottomSettings")?.addEventListener("click", e => {
+    // 開いた直後にdocument側の「パネル外クリック」で閉じないようにする。
+    e.preventDefault();
+    e.stopPropagation();
+    Settings.togglePanel();
+  });
   document.getElementById("todayBtn")?.addEventListener("click", () => Calendar.goToday());
   document.getElementById("quickAddEvent")?.addEventListener("click", () => Calendar.openModal(Calendar.keyFromDate(new Date())));
 
@@ -149,10 +154,13 @@
   document.addEventListener("click", e => {
     const settings  = document.getElementById("settings");
     const trigger   = document.getElementById("menuTrigger");
+    const bottomSettings = document.getElementById("bottomSettings");
     const wdPanel   = document.getElementById("weatherDetailPanel");
 
     if (settings?.classList.contains("open")
-        && !settings.contains(e.target) && !trigger.contains(e.target)) {
+        && !settings.contains(e.target)
+        && !trigger?.contains(e.target)
+        && !bottomSettings?.contains(e.target)) {
       settings.classList.remove("open");
     }
     if (wdPanel?.classList.contains("open") && !wdPanel.contains(e.target)) {
