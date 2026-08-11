@@ -97,6 +97,8 @@
   }));
   document.getElementById("bottomGarbage")?.addEventListener("click", () => location.href = "garbage-calendar.html");
   document.getElementById("bottomSettings")?.addEventListener("click", () => Settings.togglePanel());
+  document.getElementById("todayBtn")?.addEventListener("click", () => Calendar.goToday());
+  document.getElementById("quickAddEvent")?.addEventListener("click", () => Calendar.openModal(Calendar.keyFromDate(new Date())));
 
   // ── 週送りボタン ──────────────────────────────────────
   document.getElementById("prevWeek")?.addEventListener("click", (e) => {
@@ -107,6 +109,24 @@
     e.preventDefault();
     Calendar.moveWeek(1);
   });
+
+  // カレンダー上の横スワイプで前後の期間へ移動する。
+  const calendarSection = document.getElementById("calendarSection");
+  let swipeStartX = 0;
+  let swipeStartY = 0;
+  calendarSection?.addEventListener("touchstart", e => {
+    if (e.touches.length !== 1) return;
+    swipeStartX = e.touches[0].clientX;
+    swipeStartY = e.touches[0].clientY;
+  }, { passive:true });
+  calendarSection?.addEventListener("touchend", e => {
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    const dx = touch.clientX - swipeStartX;
+    const dy = touch.clientY - swipeStartY;
+    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
+    Calendar.moveWeek(dx < 0 ? 1 : -1);
+  }, { passive:true });
 
   // ── ハンバーガーメニュー ───────────────────────────────
   document.getElementById("menuTrigger")?.addEventListener("click", (e) => {

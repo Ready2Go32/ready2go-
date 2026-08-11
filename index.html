@@ -152,8 +152,10 @@
   <div class="calendar-toolbar">
     <div class="view-switch" role="group" aria-label="カレンダー表示">
       <button type="button" class="view-btn active" data-view="month">月</button>
-      <button type="button" class="view-btn" data-view="list">7日</button>
+      <button type="button" class="view-btn" data-view="week">週</button>
+      <button type="button" class="view-btn" data-view="agenda">予定一覧</button>
     </div>
+    <button type="button" id="todayBtn" class="today-jump-btn">今日</button>
   </div>
   <div class="week-nav">
     <button type="button" class="week-btn" id="prevWeek">‹</button>
@@ -176,6 +178,8 @@
   </section>
 
 </main>
+
+<button type="button" id="quickAddEvent" class="quick-add-event" aria-label="今日の予定を追加">＋</button>
 
 <nav class="bottom-nav" aria-label="メインメニュー">
   <button type="button" class="bottom-nav-item active" data-target="todaySection"><span>⌂</span><small>ホーム</small></button>

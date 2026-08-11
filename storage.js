@@ -103,6 +103,35 @@ const Storage = (() => {
     });
   }
 
+  async function getEventsForDates(dateKeys) {
+    if (!Array.isArray(dateKeys) || !dateKeys.length) return {};
+    const keys = [...new Set(dateKeys)].sort();
+    const result = {};
+    if (hasServer() && navigator.onLine) {
+      try {
+        const query = new URLSearchParams({ start: keys[0], end: keys[keys.length - 1] });
+        const response = await fetch(`${SERVER_URL}/api/events-range?${query}`, { headers: authHeaders() });
+        if (response.ok) {
+          const serverEvents = await response.json();
+          for (const dateKey of keys) {
+            // 未同期の端末変更はサーバー取得結果で上書きしない。
+            if (pendingDates().includes(dateKey)) {
+              result[dateKey] = await getLocalEvents(dateKey);
+            } else {
+              result[dateKey] = Array.isArray(serverEvents[dateKey]) ? serverEvents[dateKey] : [];
+              await saveEvents(dateKey, result[dateKey]);
+            }
+          }
+          return result;
+        }
+      } catch (error) {
+        console.warn("予定の一括取得に失敗、端末保存を使用", error);
+      }
+    }
+    for (const dateKey of keys) result[dateKey] = await getLocalEvents(dateKey);
+    return result;
+  }
+
   async function saveEvents(dateKey, list) {
     // サーバーがある場合は全件送信
     if (hasServer()) {
@@ -393,7 +422,7 @@ const Storage = (() => {
   window.addEventListener("offline", () => updateSyncStatus());
 
   return {
-    open, getEvents, getAllEvents, saveEvents, deleteEvent, addEvent, addRecurringEvent, updateEvent,
+    open, getEvents, getEventsForDates, getAllEvents, saveEvents, deleteEvent, addEvent, addRecurringEvent, updateEvent,
     saveGarbageSchedule, getGarbageSchedule,
     loadUserSettings, syncUserSettings, syncAllToServer, testLineNotification, exportData, importData,
     getLineIdToken, hasServer, updateSyncStatus

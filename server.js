@@ -246,6 +246,26 @@ async function requireUserAuth(req, res, next) {
 }
 
 // 予定一覧取得
+app.get("/api/events-range", requireUserAuth, (req, res) => {
+  const start = String(req.query.start || "");
+  const end = String(req.query.end || "");
+  if (!validDateKey(start) || !validDateKey(end)) {
+    return res.status(400).json({ error: "期間が正しくありません" });
+  }
+  const startDate = new Date(`${start}T00:00:00Z`);
+  const endDate = new Date(`${end}T00:00:00Z`);
+  const days = Math.floor((endDate - startDate) / 86400000) + 1;
+  if (!Number.isFinite(days) || days < 1 || days > 62) {
+    return res.status(400).json({ error: "取得期間は62日以内にしてください" });
+  }
+  const all = store.events[req.userId] || {};
+  const result = {};
+  for (const [dateKey, list] of Object.entries(all)) {
+    if (dateKey >= start && dateKey <= end) result[dateKey] = list;
+  }
+  res.json(result);
+});
+
 app.get("/api/events/:dateKey", requireUserAuth, (req, res) => {
   const { dateKey } = req.params;
   if (!validDateKey(dateKey)) return res.status(400).json({ error: "日付が正しくありません" });

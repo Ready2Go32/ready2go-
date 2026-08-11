@@ -8,7 +8,8 @@ const Calendar = (() => {
     d.setHours(0, 0, 0, 0);
     return d;
   })();
-  let viewMode = localStorage.getItem("calendarView") || "month";
+  const savedView = localStorage.getItem("calendarView");
+  let viewMode = ["month", "week", "agenda"].includes(savedView) ? savedView : "month";
 
   const DAY_NAMES = ["日","月","火","水","木","金","土"];
 
@@ -19,15 +20,22 @@ const Calendar = (() => {
   }
 
   function moveWeek(n) {
-    if (viewMode === "month") weekStart.setMonth(weekStart.getMonth() + n);
-    else weekStart.setDate(weekStart.getDate() + n * 7);
+    if (viewMode === "month") weekStart = new Date(weekStart.getFullYear(), weekStart.getMonth() + n, 1);
+    else if (viewMode === "week") weekStart.setDate(weekStart.getDate() + n * 7);
+    else weekStart.setDate(weekStart.getDate() + n * 30);
     draw();
   }
 
   function setView(mode) {
-    viewMode = mode === "list" ? "list" : "month";
+    viewMode = ["month", "week", "agenda"].includes(mode) ? mode : "month";
     localStorage.setItem("calendarView", viewMode);
     document.querySelectorAll(".view-btn").forEach(b => b.classList.toggle("active", b.dataset.view === viewMode));
+    draw();
+  }
+
+  function goToday() {
+    weekStart = new Date();
+    weekStart.setHours(0, 0, 0, 0);
     draw();
   }
 
@@ -54,18 +62,25 @@ const Calendar = (() => {
       first.setDate(first.getDate() - first.getDay());
       for (let i=0;i<42;i++) { const d=new Date(first); d.setDate(d.getDate()+i); dates.push(d); }
       labelEl.textContent = weekStart.toLocaleDateString("ja-JP", { year:"numeric", month:"long" });
-    } else {
+    } else if (viewMode === "week") {
       const start = new Date(weekStart);
-      const today = new Date();
-      if (Math.abs(start - today) < 8 * 86400000) { start.setTime(today.getTime()); start.setHours(0,0,0,0); }
+      start.setDate(start.getDate() - start.getDay());
       for (let i=0;i<7;i++) { const d=new Date(start); d.setDate(d.getDate()+i); dates.push(d); }
       const end = dates[6];
+      labelEl.textContent = `${dates[0].toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"})} 〜 ${end.toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"})}`;
+    } else {
+      const start = new Date(weekStart);
+      for (let i=0;i<30;i++) { const d=new Date(start); d.setDate(d.getDate()+i); dates.push(d); }
+      const end = dates[29];
       labelEl.textContent = `${dates[0].toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"})} 〜 ${end.toLocaleDateString("ja-JP",{month:"numeric",day:"numeric"})}`;
     }
 
     const todayKey = keyFromDate(new Date());
-    const eventLists = await Promise.all(dates.map(d => Storage.getEvents(keyFromDate(d)).catch(() => [])));
+    const dateKeys = dates.map(keyFromDate);
+    const eventsByDate = await Storage.getEventsForDates(dateKeys).catch(() => ({}));
+    const eventLists = dateKeys.map(dateKey => eventsByDate[dateKey] || []);
 
+    let renderedDays = 0;
     for (let dateIndex = 0; dateIndex < dates.length; dateIndex++) {
       const d = dates[dateIndex];
       const key = keyFromDate(d);
@@ -99,12 +114,13 @@ const Calendar = (() => {
       box.appendChild(header);
 
       // ゴミ収集
+      let garbageTypes = [];
       if (garbageSchedule) {
-        const gTypes = Garbage.getGarbageTypesForDate(d, garbageSchedule);
-        if (gTypes.length > 0) {
+        garbageTypes = Garbage.getGarbageTypesForDate(d, garbageSchedule);
+        if (garbageTypes.length > 0) {
           const gDiv = document.createElement("div");
           gDiv.className = "garbage-row";
-          gTypes.forEach(g => {
+          garbageTypes.forEach(g => {
             const span = document.createElement("span");
             span.className = "garbage-tag";
             span.style.background = g.color;
@@ -119,6 +135,9 @@ const Calendar = (() => {
       const events = eventLists[dateIndex]
         .map((ev, originalIdx) => ({ ev, originalIdx }))
         .sort((a, b) => String(a.ev.time || "").localeCompare(String(b.ev.time || "")));
+      // 予定一覧では、予定もごみ収集もない日は表示しない。
+      if (viewMode === "agenda" && events.length === 0 && garbageTypes.length === 0) continue;
+
       const visibleEvents = viewMode === "month" ? events.slice(0, 3) : events;
       visibleEvents.forEach(({ ev, originalIdx }) => {
         const div = document.createElement("div");
@@ -143,12 +162,19 @@ const Calendar = (() => {
         more.type = "button";
         more.className = "month-more";
         more.textContent = `ほか${events.length - visibleEvents.length}件`;
-        more.onclick = e => { e.stopPropagation(); setView("list"); weekStart = new Date(d); draw(); };
+        more.onclick = e => { e.stopPropagation(); weekStart = new Date(d); setView("agenda"); };
         box.appendChild(more);
       }
 
       box.onclick = () => openModal(key);
       calEl.appendChild(box);
+      renderedDays++;
+    }
+    if (viewMode === "agenda" && renderedDays === 0) {
+      const empty = document.createElement("div");
+      empty.className = "agenda-empty";
+      empty.innerHTML = "<b>この期間の予定はありません</b><span>右下の＋から予定を追加できます</span>";
+      calEl.appendChild(empty);
     }
   }
 
@@ -292,5 +318,5 @@ const Calendar = (() => {
     });
   }
 
-  return { draw, moveWeek, setView, openModal, checkNotifications };
+  return { draw, moveWeek, setView, goToday, openModal, checkNotifications, keyFromDate };
 })();
