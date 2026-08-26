@@ -117,20 +117,28 @@
 
   // カレンダー上の横スワイプで前後の期間へ移動する。
   const calendarSection = document.getElementById("calendarSection");
-  let swipeStartX = 0;
-  let swipeStartY = 0;
-  calendarSection?.addEventListener("touchstart", e => {
+  const calendarSwipeArea = calendarSection?.querySelector(".calendar-section");
+  let swipeStartX = null;
+  let swipeStartY = null;
+  calendarSwipeArea?.addEventListener("touchstart", e => {
     if (e.touches.length !== 1) return;
     swipeStartX = e.touches[0].clientX;
     swipeStartY = e.touches[0].clientY;
   }, { passive:true });
-  calendarSection?.addEventListener("touchend", e => {
+  calendarSwipeArea?.addEventListener("touchend", e => {
+    if (swipeStartX == null || swipeStartY == null) return;
     const touch = e.changedTouches[0];
     if (!touch) return;
     const dx = touch.clientX - swipeStartX;
     const dy = touch.clientY - swipeStartY;
+    swipeStartX = null;
+    swipeStartY = null;
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
     Calendar.moveWeek(dx < 0 ? 1 : -1);
+  }, { passive:true });
+  calendarSwipeArea?.addEventListener("touchcancel", () => {
+    swipeStartX = null;
+    swipeStartY = null;
   }, { passive:true });
 
   // ── ハンバーガーメニュー ───────────────────────────────

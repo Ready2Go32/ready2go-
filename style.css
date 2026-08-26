@@ -202,7 +202,10 @@ select:focus, input[type="date"]:focus { border-color: var(--accent); }
 }
 .settings-panel.open { transform: translateX(0); }
 
-.settings-inner { padding: 16px 0; }
+.settings-inner {
+  /* 下部メニューと重ならず、最後のプライバシー関連項目の下にも余白を残す */
+  padding: 16px 0 calc(96px + env(safe-area-inset-bottom));
+}
 
 .settings-section {
   padding: 8px 0 12px;
@@ -441,10 +444,15 @@ select:focus, input[type="date"]:focus { border-color: var(--accent); }
   display: flex;
   gap: 6px;
   overflow-x: auto;
+  /* 時間別天気の横操作を、この要素内のスクロールとして扱う */
+  overscroll-behavior-inline: contain;
   padding-bottom: 4px;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+
+/* 月移動のスワイプは実際のカレンダー上だけで受け付ける */
+.calendar-section { touch-action: pan-y; }
 .hourly-scroll::-webkit-scrollbar { height: 4px; }
 .hourly-scroll::-webkit-scrollbar-track { background: transparent; }
 .hourly-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
