@@ -47,10 +47,12 @@
     const savedPref = localStorage.getItem("pref") || "東京都";
     prefSel.value = savedPref;
 
-    prefSel.onchange = () => {
+    prefSel.onchange = async () => {
       localStorage.setItem("pref", prefSel.value);
       updateRegionSelect(prefSel.value);
-      loadAndDraw();
+      await loadAndDraw();
+      await Dashboard?.refresh?.();
+      await Ready2GoFeatures?.refresh?.();
     };
 
     // 初期地域リスト
@@ -91,17 +93,36 @@
   document.querySelectorAll(".view-btn").forEach(btn => btn.addEventListener("click", () => Calendar.setView(btn.dataset.view)));
   document.querySelectorAll(".view-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.view === (localStorage.getItem("calendarView") || "month")));
 
-  document.querySelectorAll(".bottom-nav-item[data-target]").forEach(btn => btn.addEventListener("click", () => {
-    document.querySelectorAll(".bottom-nav-item").forEach(x => x.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById(btn.dataset.target)?.scrollIntoView({ behavior:"smooth" });
-  }));
+  let currentTab = "todaySection";
+  function showTab(targetId, smooth = true) {
+    const target = document.getElementById(targetId);
+    if (!target?.classList.contains("app-tab-panel")) return;
+    currentTab = targetId;
+    document.querySelectorAll(".app-tab-panel").forEach(panel => { panel.hidden = panel.id !== targetId; });
+    document.querySelectorAll(".bottom-nav-item").forEach(button => button.classList.toggle("active", button.dataset.target === targetId));
+    const addButton = document.getElementById("quickAddEvent");
+    if (addButton) addButton.hidden = targetId !== "calendarSection";
+    document.getElementById("settings")?.classList.remove("open");
+    if (targetId === "calendarSection") Calendar.draw();
+    if (targetId === "weatherSection") Weather.renderDetails();
+    localStorage.setItem("ready2goCurrentTab", targetId);
+    window.scrollTo({ top:0, behavior:smooth ? "smooth" : "auto" });
+  }
+  window.openAppTab = showTab;
+  document.querySelectorAll(".bottom-nav-item[data-target]").forEach(btn => btn.addEventListener("click", () => showTab(btn.dataset.target)));
   document.getElementById("bottomGarbage")?.addEventListener("click", () => location.href = "garbage-calendar.html");
   document.getElementById("bottomSettings")?.addEventListener("click", e => {
     // 開いた直後にdocument側の「パネル外クリック」で閉じないようにする。
     e.preventDefault();
     e.stopPropagation();
     Settings.togglePanel();
+    const isOpen = document.getElementById("settings")?.classList.contains("open");
+    document.querySelectorAll(".bottom-nav-item").forEach(button => button.classList.toggle("active", isOpen ? button.id === "bottomSettings" : button.dataset.target === currentTab));
+  });
+  document.getElementById("weatherRefreshBtn")?.addEventListener("click", async event => {
+    const button = event.currentTarget; button.disabled = true; button.textContent = "更新中…";
+    try { await Weather.load(); await Dashboard.refresh(); }
+    finally { button.disabled = false; button.textContent = "↻ 更新"; }
   });
   document.getElementById("todayBtn")?.addEventListener("click", () => Calendar.goToday());
   document.getElementById("quickAddEvent")?.addEventListener("click", () => Calendar.openModal(Calendar.keyFromDate(new Date())));
@@ -171,6 +192,7 @@
         && !trigger?.contains(e.target)
         && !bottomSettings?.contains(e.target)) {
       settings.classList.remove("open");
+      document.querySelectorAll(".bottom-nav-item").forEach(button => button.classList.toggle("active", button.dataset.target === currentTab));
     }
     if (wdPanel?.classList.contains("open") && !wdPanel.contains(e.target)) {
       wdPanel.classList.remove("open");
@@ -183,7 +205,9 @@
   await Ready2GoFeatures.init();
 
   const openTarget = new URLSearchParams(location.search).get("open");
-  if (openTarget === "calendar") document.getElementById("calendarSection")?.scrollIntoView();
+  if (openTarget === "calendar") showTab("calendarSection", false);
+  else if (openTarget === "weather") showTab("weatherSection", false);
+  else showTab("todaySection", false);
   if (openTarget === "tomorrow") document.getElementById("tomorrowSection")?.scrollIntoView();
 
   async function loadAndDraw() {

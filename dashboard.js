@@ -51,7 +51,8 @@ const Dashboard = (() => {
   }
 
   function init() {
-    document.getElementById("nextEventCard")?.addEventListener("click", () => document.getElementById("calendarSection")?.scrollIntoView({ behavior:"smooth" }));
+    document.getElementById("nextEventCard")?.addEventListener("click", () => window.openAppTab?.("calendarSection"));
+    document.getElementById("weatherSummaryCard")?.addEventListener("click", () => window.openAppTab?.("weatherSection"));
     document.getElementById("nextGarbageCard")?.addEventListener("click", () => location.href = "garbage-calendar.html");
     document.getElementById("lineStatusCard")?.addEventListener("click", () => Settings.togglePanel());
     window.addEventListener("online", refresh); window.addEventListener("offline", refresh);

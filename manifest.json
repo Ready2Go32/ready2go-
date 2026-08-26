@@ -32,6 +32,12 @@
       "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
+      "name": "天気の詳細",
+      "short_name": "天気",
+      "url": "./index.html?open=weather",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
       "name": "ごみ収集",
       "short_name": "ごみ",
       "url": "./garbage-calendar.html",

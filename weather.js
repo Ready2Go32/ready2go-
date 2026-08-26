@@ -1,181 +1,114 @@
-// weather.js — 天気取得モジュール（位置情報対応版）
-
+// weather.js — 現在天気・時間別・週間・花粉・生活アラート
 const Weather = (() => {
-
-  const PREF_MAP = {
-    "北海道":"Sapporo","青森県":"Aomori","岩手県":"Morioka","宮城県":"Sendai",
-    "秋田県":"Akita","山形県":"Yamagata","福島県":"Fukushima","茨城県":"Mito",
-    "栃木県":"Utsunomiya","群馬県":"Maebashi","埼玉県":"Saitama","千葉県":"Chiba",
-    "東京都":"Tokyo","神奈川県":"Yokohama","新潟県":"Niigata","富山県":"Toyama",
-    "石川県":"Kanazawa","福井県":"Fukui","山梨県":"Kofu","長野県":"Nagano",
-    "岐阜県":"Gifu","静岡県":"Shizuoka","愛知県":"Nagoya","三重県":"Tsu",
-    "滋賀県":"Otsu","京都府":"Kyoto","大阪府":"Osaka","兵庫県":"Kobe",
-    "奈良県":"Nara","和歌山県":"Wakayama","鳥取県":"Tottori","島根県":"Matsue",
-    "岡山県":"Okayama","広島県":"Hiroshima","山口県":"Yamaguchi","徳島県":"Tokushima",
-    "香川県":"Takamatsu","愛媛県":"Matsuyama","高知県":"Kochi","福岡県":"Fukuoka",
-    "佐賀県":"Saga","長崎県":"Nagasaki","熊本県":"Kumamoto","大分県":"Oita",
-    "宮崎県":"Miyazaki","鹿児島県":"Kagoshima","沖縄県":"Naha"
-  };
-
+  const PREF_NAMES = ["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
+  const PREF_MAP = Object.fromEntries(PREF_NAMES.map(name => [name, name]));
   const PREF_COORDS = {
-    "北海道":{lat:43.06,lon:141.35},"青森県":{lat:40.82,lon:140.74},
-    "岩手県":{lat:39.70,lon:141.15},"宮城県":{lat:38.27,lon:140.87},
-    "秋田県":{lat:39.72,lon:140.10},"山形県":{lat:38.24,lon:140.36},
-    "福島県":{lat:37.75,lon:140.47},"茨城県":{lat:36.34,lon:140.45},
-    "栃木県":{lat:36.57,lon:139.88},"群馬県":{lat:36.39,lon:139.06},
-    "埼玉県":{lat:35.86,lon:139.65},"千葉県":{lat:35.61,lon:140.12},
-    "東京都":{lat:35.69,lon:139.69},"神奈川県":{lat:35.45,lon:139.64},
-    "新潟県":{lat:37.90,lon:139.02},"富山県":{lat:36.70,lon:137.21},
-    "石川県":{lat:36.59,lon:136.63},"福井県":{lat:36.07,lon:136.22},
-    "山梨県":{lat:35.67,lon:138.57},"長野県":{lat:36.65,lon:138.18},
-    "岐阜県":{lat:35.39,lon:136.72},"静岡県":{lat:34.98,lon:138.38},
-    "愛知県":{lat:35.18,lon:136.91},"三重県":{lat:34.73,lon:136.51},
-    "滋賀県":{lat:35.00,lon:135.87},"京都府":{lat:35.02,lon:135.76},
-    "大阪府":{lat:34.69,lon:135.50},"兵庫県":{lat:34.69,lon:135.20},
-    "奈良県":{lat:34.69,lon:135.83},"和歌山県":{lat:34.23,lon:135.17},
-    "鳥取県":{lat:35.50,lon:134.24},"島根県":{lat:35.47,lon:133.05},
-    "岡山県":{lat:34.66,lon:133.93},"広島県":{lat:34.40,lon:132.46},
-    "山口県":{lat:34.19,lon:131.47},"徳島県":{lat:34.07,lon:134.56},
-    "香川県":{lat:34.34,lon:134.04},"愛媛県":{lat:33.84,lon:132.77},
-    "高知県":{lat:33.56,lon:133.53},"福岡県":{lat:33.61,lon:130.42},
-    "佐賀県":{lat:33.25,lon:130.30},"長崎県":{lat:32.74,lon:129.87},
-    "熊本県":{lat:32.79,lon:130.74},"大分県":{lat:33.24,lon:131.61},
-    "宮崎県":{lat:31.91,lon:131.42},"鹿児島県":{lat:31.56,lon:130.56},
-    "沖縄県":{lat:26.21,lon:127.68}
+    "北海道":{lat:43.06,lon:141.35},"青森県":{lat:40.82,lon:140.74},"岩手県":{lat:39.70,lon:141.15},"宮城県":{lat:38.27,lon:140.87},"秋田県":{lat:39.72,lon:140.10},"山形県":{lat:38.24,lon:140.36},"福島県":{lat:37.75,lon:140.47},
+    "茨城県":{lat:36.34,lon:140.45},"栃木県":{lat:36.57,lon:139.88},"群馬県":{lat:36.39,lon:139.06},"埼玉県":{lat:35.86,lon:139.65},"千葉県":{lat:35.61,lon:140.12},"東京都":{lat:35.69,lon:139.69},"神奈川県":{lat:35.45,lon:139.64},
+    "新潟県":{lat:37.90,lon:139.02},"富山県":{lat:36.70,lon:137.21},"石川県":{lat:36.59,lon:136.63},"福井県":{lat:36.07,lon:136.22},"山梨県":{lat:35.67,lon:138.57},"長野県":{lat:36.65,lon:138.18},"岐阜県":{lat:35.39,lon:136.72},
+    "静岡県":{lat:34.98,lon:138.38},"愛知県":{lat:35.18,lon:136.91},"三重県":{lat:34.73,lon:136.52},"滋賀県":{lat:35.00,lon:135.87},"京都府":{lat:35.02,lon:135.76},"大阪府":{lat:34.69,lon:135.50},"兵庫県":{lat:34.69,lon:135.20},
+    "奈良県":{lat:34.69,lon:135.83},"和歌山県":{lat:34.23,lon:135.17},"鳥取県":{lat:35.50,lon:134.24},"島根県":{lat:35.47,lon:133.05},"岡山県":{lat:34.66,lon:133.93},"広島県":{lat:34.40,lon:132.46},"山口県":{lat:34.19,lon:131.47},
+    "徳島県":{lat:34.07,lon:134.56},"香川県":{lat:34.34,lon:134.04},"愛媛県":{lat:33.84,lon:132.76},"高知県":{lat:33.56,lon:133.53},"福岡県":{lat:33.61,lon:130.42},"佐賀県":{lat:33.25,lon:130.30},"長崎県":{lat:32.74,lon:129.87},
+    "熊本県":{lat:32.79,lon:130.74},"大分県":{lat:33.24,lon:131.61},"宮崎県":{lat:31.91,lon:131.42},"鹿児島県":{lat:31.56,lon:130.56},"沖縄県":{lat:26.21,lon:127.68}
   };
 
-  let weatherMap = {};
-  let detailData = {};
-  // 位置情報で取得した場合の座標
-  let gpsCoords  = null;
+  let weatherMap = {}, detailData = {}, weeklyData = [], gpsCoords = null;
+  const localDateKey = date => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+  const num = (array,index,fallback=0) => Number.isFinite(Number(array?.[index])) ? Number(array[index]) : fallback;
+  const setText = (id,value) => { const element=document.getElementById(id); if(element) element.textContent=value; };
 
-  function getWeatherMap() { return weatherMap; }
-  function getDetailData() { return detailData; }
-  function getGpsCoords()  { return gpsCoords; }
-
-  function wmoEmoji(code) {
-    if (code <= 1)  return "☀️";
-    if (code <= 3)  return "☁️";
-    if (code <= 49) return "🌫️";
-    if (code <= 67) return "☔";
-    if (code <= 77) return "☃️";
-    if (code <= 82) return "🌧️";
-    if (code <= 99) return "⚡";
-    return "☀️";
+  function wmoEmoji(code) { if(code<=1)return"☀️";if(code<=3)return"☁️";if(code<=49)return"🌫️";if(code<=67)return"☔";if(code<=77)return"☃️";if(code<=82)return"🌧️";if(code<=99)return"⚡";return"☀️"; }
+  function wmoText(code) { if(code===0)return"快晴";if(code<=2)return"晴れ時々くもり";if(code===3)return"くもり";if(code<=49)return"霧";if(code<=57)return"霧雨";if(code<=67)return"雨";if(code<=77)return"雪";if(code<=82)return"強い雨";if(code<=99)return"雷雨";return"天気不明"; }
+  function uvLabel(value) { if(value>=8)return"非常に強い";if(value>=6)return"強い";if(value>=3)return"中程度";return"弱い"; }
+  function pollenLabel(value) { if(value==null)return"取得不可";if(value>=100)return"非常に多い";if(value>=50)return"多い";if(value>=10)return"やや多い";return"少ない"; }
+  function heatRisk(value) {
+    if(value>=38)return{level:"危険が高い",className:"alert-danger",text:"外出時は特に注意し、涼しい場所・休憩・水分補給を意識してください。体感温度からの目安で、公式発表ではありません。"};
+    if(value>=33)return{level:"厳重に注意",className:"alert-warning",text:"長時間の屋外活動を避け、こまめに休憩してください。体感温度からの目安で、公式発表ではありません。"};
+    if(value>=28)return{level:"注意",className:"alert-caution",text:"水分補給と休憩を忘れずに。体感温度からの目安で、公式発表ではありません。"};
+    return{level:"現在の注意度は低め",className:"alert-safe",text:"体調や活動場所によって変わるため、暑さを感じたら無理せず休憩してください。"};
   }
 
-  // GPS位置情報を取得して都道府県セレクトに反映
-  async function requestLocation() {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) { resolve(null); return; }
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          gpsCoords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-          localStorage.setItem("gpsLat", gpsCoords.lat);
-          localStorage.setItem("gpsLon", gpsCoords.lon);
-          resolve(gpsCoords);
-        },
-        () => resolve(null),
-        { timeout: 8000 }
-      );
-    });
+  function getWeatherMap(){return weatherMap;} function getDetailData(){return detailData;} function getGpsCoords(){return gpsCoords;}
+  function requestLocation(){return new Promise(resolve=>{if(!navigator.geolocation)return resolve(null);navigator.geolocation.getCurrentPosition(pos=>{gpsCoords={lat:pos.coords.latitude,lon:pos.coords.longitude};localStorage.setItem("gpsLat",gpsCoords.lat);localStorage.setItem("gpsLon",gpsCoords.lon);resolve(gpsCoords);},()=>resolve(null),{timeout:8000});});}
+  function loadSavedGps(){const lat=parseFloat(localStorage.getItem("gpsLat")),lon=parseFloat(localStorage.getItem("gpsLon"));if(!Number.isNaN(lat)&&!Number.isNaN(lon)){gpsCoords={lat,lon};return gpsCoords;}return null;}
+  function getCoords(){if(gpsCoords)return gpsCoords;const saved=loadSavedGps();if(saved)return saved;const pref=document.getElementById("pref")?.value||"東京都";return PREF_COORDS[pref]||PREF_COORDS["東京都"];}
+  function getWindDirLabel(deg){if(deg==null)return"--";const dirs=["北","北北東","北東","東北東","東","東南東","南東","南南東","南","南南西","南西","西南西","西","西北西","北西","北北西"];return dirs[Math.round(deg/22.5)%16];}
+
+  async function loadPollen(coords,today){
+    try{
+      const url=`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${coords.lat}&longitude=${coords.lon}&hourly=alder_pollen,birch_pollen,grass_pollen,mugwort_pollen,ragweed_pollen&timezone=Asia%2FTokyo&forecast_days=3`;
+      const response=await fetch(url);if(!response.ok)throw new Error(`HTTP ${response.status}`);const data=await response.json();
+      const indices=(data.hourly?.time||[]).map((time,index)=>time.startsWith(today)?index:-1).filter(index=>index>=0);
+      const names=["alder_pollen","birch_pollen","grass_pollen","mugwort_pollen","ragweed_pollen"];
+      const peaks=names.map(name=>Math.max(0,...indices.map(index=>num(data.hourly?.[name],index,0))));
+      const total=Math.round(peaks.reduce((sum,value)=>sum+value,0));
+      return{total,label:pollenLabel(total),breakdown:`ハンノキ${Math.round(peaks[0])}・シラカバ${Math.round(peaks[1])}・イネ科${Math.round(peaks[2])}`};
+    }catch(error){console.warn("[Pollen]",error);return{total:null,label:"取得不可",breakdown:"主要花粉の参考値を取得できませんでした"};}
   }
 
-  // 保存済みGPS座標を復元
-  function loadSavedGps() {
-    const lat = parseFloat(localStorage.getItem("gpsLat"));
-    const lon = parseFloat(localStorage.getItem("gpsLon"));
-    if (!isNaN(lat) && !isNaN(lon)) {
-      gpsCoords = { lat, lon };
-      return gpsCoords;
-    }
-    return null;
+  function buildNews(){
+    const news=[];
+    if(detailData.rainChance>=50)news.push({icon:"☔",title:"雨具があると安心",text:`今日の最大降水確率は${detailData.rainChance}%です。`});
+    if(detailData.uv>=6)news.push({icon:"☀️",title:"日差しが強い予報",text:"長時間外にいる場合は、日陰や休憩を意識しましょう。"});
+    if(detailData.windMax>=25||detailData.windGust>=40)news.push({icon:"💨",title:"風に注意",text:`最大風速は約${detailData.windMax}km/hの予報です。`});
+    if(detailData.tempMax-detailData.tempMin>=10)news.push({icon:"🧥",title:"一日の寒暖差が大きめ",text:`最高と最低の差は約${Math.round(detailData.tempMax-detailData.tempMin)}℃です。`});
+    if(detailData.pollen?.total>=10)news.push({icon:"🌲",title:"花粉の参考値が上昇",text:"主要花粉の予測です。スギ・ヒノキ専用情報ではありません。"});
+    if(!news.length)news.push({icon:"✅",title:"大きな注意情報はありません",text:"予定の前に最新予報をもう一度確認すると安心です。"});
+    return news;
   }
 
-  function getCoords() {
-    if (gpsCoords) return gpsCoords;
-    const saved = loadSavedGps();
-    if (saved) return saved;
-    const pref = document.getElementById("pref")?.value || "東京都";
-    return PREF_COORDS[pref] || { lat: 35.69, lon: 139.69 };
+  function renderDetails(){
+    if(detailData.temp==null)return;
+    const pref=document.getElementById("pref")?.value||"東京都",region=document.getElementById("region")?.value||"";
+    setText("weatherLocationLabel",`${pref}${region?`・${region}`:""}の天気`);setText("weatherHeroIcon",detailData.icon);setText("weatherHeroCondition",detailData.desc);
+    setText("weatherHeroTemp",`${detailData.temp}℃`);setText("weatherHeroRange",`最高${detailData.tempMax}℃／最低${detailData.tempMin}℃`);setText("weatherFeelsLike",`${detailData.feelsLike}℃`);
+    setText("weatherUpdatedAt",`${detailData.updatedAt.slice(11,16)}更新・${detailData.source}`);setText("weatherRainChance",`${detailData.rainChance}%`);setText("weatherRainAmount",`現在の降水量 ${detailData.rain.toFixed(1)}mm`);
+    setText("weatherHumidity",`${detailData.humidity}%`);setText("weatherWind",`${detailData.wind}km/h`);setText("weatherWindDetail",`${getWindDirLabel(detailData.windDirection)}・最大${detailData.windMax}km/h`);
+    setText("weatherPressure",`${detailData.pressure}hPa`);setText("weatherUv",detailData.uv.toFixed(1));setText("weatherUvLabel",uvLabel(detailData.uv));
+    setText("weatherPollen",detailData.pollen.label);setText("weatherPollenDetail",detailData.pollen.breakdown);setText("weatherSunrise",detailData.sunrise.slice(11,16));setText("weatherSunset",`日の入 ${detailData.sunset.slice(11,16)}`);setText("weatherCloud",`${detailData.cloud}%`);
+    const heat=heatRisk(detailData.apparentMax),alert=document.getElementById("heatAlertCard");if(alert){alert.classList.remove("alert-safe","alert-caution","alert-warning","alert-danger");alert.classList.add(heat.className);}setText("heatAlertLevel",heat.level);setText("heatAlertText",heat.text);
+    const weekly=document.getElementById("weeklyWeather");if(weekly)weekly.innerHTML=weeklyData.map((day,index)=>`<article class="weekly-weather-day"><span>${index===0?"今日":new Date(`${day.date}T12:00:00`).toLocaleDateString("ja-JP",{weekday:"short",month:"numeric",day:"numeric"})}</span><b>${day.icon} ${day.text}</b><em><strong>${day.max}℃</strong> / ${day.min}℃</em><small>降水 ${day.rainChance}%</small></article>`).join("");
+    const news=document.getElementById("weatherNews");if(news)news.innerHTML=buildNews().map(item=>`<article><span>${item.icon}</span><div><b>${item.title}</b><p>${item.text}</p></div></article>`).join("");
   }
 
-  async function loadOpenMeteo() {
-    const hourlyEl = document.getElementById("hourlyWeather");
-    const coords   = getCoords();
-
-    try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}`
-        + `&hourly=temperature_2m,weathercode,precipitation,windspeed_10m,relativehumidity_2m,surface_pressure`
-        + `&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_sum`
-        + `&timezone=Asia%2FTokyo&forecast_days=7`;
-
-      const res  = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-
-      weatherMap = {};
-      (data.daily?.time || []).forEach((dt, i) => {
-        weatherMap[dt] = {
-          icon: wmoEmoji(data.daily.weathercode[i]),
-          temp: Math.round(data.daily.temperature_2m_max[i])
-        };
-      });
-
-      const today = new Date().toISOString().split("T")[0];
-      const todayIdx = (data.hourly?.time || []).findIndex(t => t.startsWith(today));
-      if (todayIdx >= 0) {
-        const nowH = new Date().getHours();
-        const idx  = todayIdx + nowH;
-        detailData = {
-          icon:     wmoEmoji(data.hourly.weathercode[idx] ?? 0),
-          desc:     "",
-          temp:     Math.round(data.hourly.temperature_2m[idx] ?? 0),
-          tempMax:  Math.round(data.daily.temperature_2m_max[(data.daily?.time||[]).indexOf(today)] ?? 0),
-          tempMin:  Math.round(data.daily.temperature_2m_min[(data.daily?.time||[]).indexOf(today)] ?? 0),
-          humidity: Math.round(data.hourly.relativehumidity_2m[idx] ?? 0),
-          pressure: Math.round(data.hourly.surface_pressure[idx] ?? 0),
-          wind:     Math.round((data.hourly.windspeed_10m[idx] ?? 0)),
-          rain:     data.hourly.precipitation[idx] ?? 0,
-          source:   gpsCoords ? "GPS位置情報" : "Open-Meteo"
-        };
+  async function loadOpenMeteo(){
+    const hourlyEl=document.getElementById("hourlyWeather"),coords=getCoords(),today=localDateKey(new Date());
+    try{
+      const url=`https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=temperature_2m,weather_code,precipitation,precipitation_probability,wind_speed_10m,relative_humidity_2m,surface_pressure,uv_index,apparent_temperature&daily=temperature_2m_max,temperature_2m_min,apparent_temperature_max,weather_code,precipitation_sum,precipitation_probability_max,uv_index_max,sunrise,sunset,wind_speed_10m_max,wind_gusts_10m_max&timezone=Asia%2FTokyo&forecast_days=7`;
+      const response=await fetch(url);if(!response.ok)throw new Error(`HTTP ${response.status}`);const data=await response.json(),todayIndex=(data.daily?.time||[]).indexOf(today),current=data.current||{},pollen=await loadPollen(coords,today);
+      weatherMap={};weeklyData=[];(data.daily?.time||[]).forEach((date,index)=>{const code=num(data.daily.weather_code,index),entry={date,icon:wmoEmoji(code),text:wmoText(code),max:Math.round(num(data.daily.temperature_2m_max,index)),min:Math.round(num(data.daily.temperature_2m_min,index)),rainChance:Math.round(num(data.daily.precipitation_probability_max,index))};weatherMap[date]={icon:entry.icon,temp:entry.max,tempMin:entry.min,rainChance:entry.rainChance};weeklyData.push(entry);});
+      detailData={icon:wmoEmoji(Number(current.weather_code||0)),desc:wmoText(Number(current.weather_code||0)),temp:Math.round(Number(current.temperature_2m||0)),feelsLike:Math.round(Number(current.apparent_temperature||0)),tempMax:Math.round(num(data.daily?.temperature_2m_max,todayIndex)),tempMin:Math.round(num(data.daily?.temperature_2m_min,todayIndex)),apparentMax:Math.round(num(data.daily?.apparent_temperature_max,todayIndex)),humidity:Math.round(Number(current.relative_humidity_2m||0)),pressure:Math.round(Number(current.surface_pressure||0)),wind:Math.round(Number(current.wind_speed_10m||0)),windDirection:Number(current.wind_direction_10m||0),windGust:Math.round(Number(current.wind_gusts_10m||0)),windMax:Math.round(num(data.daily?.wind_speed_10m_max,todayIndex)),rain:Number(current.precipitation||0),rainChance:Math.round(num(data.daily?.precipitation_probability_max,todayIndex)),uv:num(data.daily?.uv_index_max,todayIndex),sunrise:data.daily?.sunrise?.[todayIndex]||`${today}T--:--`,sunset:data.daily?.sunset?.[todayIndex]||`${today}T--:--`,cloud:Math.round(Number(current.cloud_cover||0)),pollen,updatedAt:current.time||new Date().toISOString(),source:gpsCoords?"GPS位置情報":"選択した都道府県"};
+      const indices=(data.hourly?.time||[]).map((time,index)=>time.startsWith(today)?index:-1).filter(index=>index>=0);if(hourlyEl)hourlyEl.innerHTML=indices.map(index=>{const hour=data.hourly.time[index].slice(11,16),code=num(data.hourly.weather_code,index),temp=Math.round(num(data.hourly.temperature_2m,index)),chance=Math.round(num(data.hourly.precipitation_probability,index));return`<div class="hourBox"><div class="hour-label">${hour}</div><div class="hour-icon">${wmoEmoji(code)}</div><div class="hour-temp">${temp}℃</div><div class="hour-rain">☔${chance}%</div></div>`;}).join("")||'<p class="weather-error">本日の時間別データがありません</p>';
+      renderDetails();
+      try {
+        localStorage.setItem("weatherDetailCache", JSON.stringify({
+          weatherMap, detailData, weeklyData,
+          hourlyHtml: hourlyEl?.innerHTML || "",
+          cachedAt: new Date().toISOString()
+        }));
+      } catch (cacheError) { console.warn("[Weather cache]", cacheError); }
+    }catch(error){
+      console.error("[Open-Meteo]",error);
+      let restored = false;
+      try {
+        const cache = JSON.parse(localStorage.getItem("weatherDetailCache") || "null");
+        if (cache?.detailData && cache?.weatherMap) {
+          weatherMap = cache.weatherMap;
+          detailData = cache.detailData;
+          weeklyData = cache.weeklyData || [];
+          if (hourlyEl) hourlyEl.innerHTML = cache.hourlyHtml || '<p class="weather-error">時間別予報の保存データはありません</p>';
+          renderDetails();
+          const cachedTime = cache.cachedAt ? new Date(cache.cachedAt).toLocaleString("ja-JP", {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "前回";
+          setText("weatherUpdatedAt",`${cachedTime}取得・保存データ`);
+          restored = true;
+        }
+      } catch (cacheError) { console.warn("[Weather cache restore]", cacheError); }
+      if (!restored) {
+        if(hourlyEl)hourlyEl.innerHTML='<p class="weather-error">⚠️ 天気の取得に失敗しました。更新ボタンを押してください。</p>';
+        setText("weatherHeroCondition","天気を取得できませんでした");
       }
-
-      let hourlyHTML = "";
-      (data.hourly?.time || []).forEach((dtStr, i) => {
-        const [dt, timeRaw] = dtStr.split("T");
-        if (dt !== today) return;
-        const hour  = timeRaw.slice(0, 5);
-        const emoji = wmoEmoji(data.hourly.weathercode[i]);
-        const temp  = Math.round(data.hourly.temperature_2m[i]);
-        const rain  = data.hourly.precipitation[i] ?? 0;
-        hourlyHTML += `
-          <div class="hourBox">
-            <div class="hour-label">${hour}</div>
-            <div class="hour-icon">${emoji}</div>
-            <div class="hour-temp">${temp}℃</div>
-            <div class="hour-rain">${rain > 0 ? rain.toFixed(1)+'mm' : ''}</div>
-          </div>`;
-      });
-
-      if (hourlyEl) hourlyEl.innerHTML = hourlyHTML || '<p class="weather-error">本日のデータなし</p>';
-
-    } catch (err) {
-      console.error("[Open-Meteo]", err);
-      if (hourlyEl) hourlyEl.innerHTML = '<p class="weather-error">⚠️ 天気の取得に失敗しました。</p>';
     }
   }
-
-  function getWindDirLabel(deg) {
-    if (deg == null) return "";
-    const dirs = ["北","北北東","北東","東北東","東","東南東","南東","南南東",
-                  "南","南南西","南西","西南西","西","西北西","北西","北北西"];
-    return dirs[Math.round(deg / 22.5) % 16];
-  }
-
-  async function load() {
-    return loadOpenMeteo();
-  }
-
-  return { load, getWeatherMap, getDetailData, getGpsCoords, requestLocation, loadSavedGps, getCoords, PREF_MAP, PREF_COORDS, getWindDirLabel };
+  async function load(){return loadOpenMeteo();}
+  return{load,renderDetails,getWeatherMap,getDetailData,getGpsCoords,requestLocation,loadSavedGps,getCoords,PREF_MAP,PREF_COORDS,getWindDirLabel};
 })();

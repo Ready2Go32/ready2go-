@@ -135,7 +135,7 @@
 <!-- ───── メインコンテンツ ───── -->
 <main class="main-content">
 
-  <section id="todaySection" class="today-section app-section">
+  <section id="todaySection" class="today-section app-section app-tab-panel" data-tab-panel="home">
     <div class="today-heading">
       <div><p class="today-eyebrow" id="todayDateLabel">今日</p><h1>今日のまとめ</h1></div>
       <span id="connectionBadge" class="status-chip">確認中</span>
@@ -143,7 +143,7 @@
     <div class="today-cards">
       <button class="summary-card summary-event" id="nextEventCard" type="button"><span class="summary-icon">📅</span><span><b>次の予定</b><small id="nextEventText">読み込み中…</small></span></button>
       <button class="summary-card summary-garbage" id="nextGarbageCard" type="button"><span class="summary-icon">🗑️</span><span><b>次のごみ</b><small id="nextGarbageText">地域を確認中…</small></span></button>
-      <div class="summary-card summary-weather"><span class="summary-icon" id="todayWeatherIcon">☁️</span><span><b>今日の天気</b><small id="todayWeatherText">読み込み中…</small></span></div>
+      <button class="summary-card summary-weather" id="weatherSummaryCard" type="button"><span class="summary-icon" id="todayWeatherIcon">☁️</span><span><b>今日の天気</b><small id="todayWeatherText">読み込み中…</small></span></button>
       <button class="summary-card summary-line" id="lineStatusCard" type="button"><span class="summary-icon">💬</span><span><b>LINE通知</b><small id="lineStatusText">連携状態を確認中…</small></span></button>
     </div>
 
@@ -175,7 +175,8 @@
   </section>
 
   <!-- 週ナビゲーション -->
-  <section id="calendarSection" class="app-section">
+  <section id="calendarSection" class="app-section app-tab-panel" data-tab-panel="calendar" hidden>
+  <div class="tab-page-heading"><div><p>スケジュール</p><h1>予定カレンダー</h1></div><span>予定だけを集中して確認</span></div>
   <div class="calendar-toolbar">
     <div class="view-switch" role="group" aria-label="カレンダー表示">
       <button type="button" class="view-btn active" data-view="month">月</button>
@@ -190,27 +191,65 @@
     <button type="button" class="week-btn" id="nextWeek">›</button>
   </div>
 
-  <!-- 今日の時間別天気 -->
-  <section class="hourly-section">
-    <div class="section-header">
-      <h2 class="section-title">今日の天気</h2>
-    </div>
-    <div id="hourlyWeather" class="hourly-scroll"></div>
-  </section>
-
   <!-- カレンダー -->
   <section class="calendar-section">
     <div id="calendar" class="calendar-grid"></div>
   </section>
   </section>
 
+  <section id="weatherSection" class="app-section app-tab-panel weather-page" data-tab-panel="weather" hidden>
+    <div class="tab-page-heading weather-page-heading">
+      <div><p id="weatherLocationLabel">選択地域の天気</p><h1>天気の詳細</h1></div>
+      <button type="button" id="weatherRefreshBtn" class="weather-refresh-btn">↻ 更新</button>
+    </div>
+
+    <section class="weather-hero">
+      <div class="weather-hero-main"><span id="weatherHeroIcon" class="weather-hero-icon">☁️</span><div><p id="weatherHeroCondition">読み込み中…</p><strong id="weatherHeroTemp">--℃</strong><small id="weatherHeroRange">最高--℃／最低--℃</small></div></div>
+      <div class="weather-hero-side"><span>体感温度</span><b id="weatherFeelsLike">--℃</b><small id="weatherUpdatedAt">更新時刻を確認中</small></div>
+    </section>
+
+    <section id="heatAlertCard" class="weather-alert-card alert-safe">
+      <span class="weather-alert-icon">🌡️</span><div><small>熱中症の注意目安（推定）</small><h2 id="heatAlertLevel">確認中</h2><p id="heatAlertText">気象データを確認しています</p></div>
+      <a href="https://www.wbgt.env.go.jp/" target="_blank" rel="noopener">環境省の公式情報</a>
+    </section>
+
+    <section class="weather-metric-grid" aria-label="天気の詳しい数値">
+      <article><span>☔</span><small>降水確率</small><b id="weatherRainChance">--%</b><em id="weatherRainAmount">降水量 --mm</em></article>
+      <article><span>💧</span><small>湿度</small><b id="weatherHumidity">--%</b><em>現在</em></article>
+      <article><span>💨</span><small>風速</small><b id="weatherWind">--km/h</b><em id="weatherWindDetail">風向 --</em></article>
+      <article><span>🧭</span><small>気圧</small><b id="weatherPressure">--hPa</b><em>地表気圧</em></article>
+      <article><span>☀️</span><small>日差し・UV</small><b id="weatherUv">--</b><em id="weatherUvLabel">確認中</em></article>
+      <article><span>🌲</span><small>花粉</small><b id="weatherPollen">--</b><em id="weatherPollenDetail">主要花粉の参考値</em></article>
+      <article><span>🌅</span><small>日の出</small><b id="weatherSunrise">--:--</b><em id="weatherSunset">日の入 --:--</em></article>
+      <article><span>👁️</span><small>視界・雲量</small><b id="weatherCloud">--%</b><em>雲量</em></article>
+    </section>
+
+    <section class="hourly-section weather-page-block">
+      <div class="section-header"><h2 class="section-title">今日の時間別予報</h2><small>横にスライドできます</small></div>
+      <div id="hourlyWeather" class="hourly-scroll"></div>
+    </section>
+
+    <section class="weather-page-block">
+      <div class="section-header"><h2 class="section-title">7日間の予報</h2></div>
+      <div id="weeklyWeather" class="weekly-weather-list"><p class="weather-error">読み込み中…</p></div>
+    </section>
+
+    <section class="weather-page-block weather-news-section">
+      <div class="section-header"><h2 class="section-title">天気ニュース・生活メモ</h2><small>現在の予報から自動作成</small></div>
+      <div id="weatherNews" class="weather-news-list"><p class="weather-error">読み込み中…</p></div>
+      <div class="weather-source-links"><a href="https://www.jma.go.jp/bosai/forecast/" target="_blank" rel="noopener">気象庁の天気予報</a><a href="https://www.wbgt.env.go.jp/" target="_blank" rel="noopener">環境省の暑さ指数</a></div>
+      <p class="weather-data-note">天気・花粉は予測値です。花粉はスギ・ヒノキ専用情報ではありません。重要な警報は気象庁・環境省の公式情報も確認してください。</p>
+    </section>
+  </section>
+
 </main>
 
-<button type="button" id="quickAddEvent" class="quick-add-event" aria-label="今日の予定を追加">＋</button>
+<button type="button" id="quickAddEvent" class="quick-add-event" aria-label="今日の予定を追加" hidden>＋</button>
 
 <nav class="bottom-nav" aria-label="メインメニュー">
-  <button type="button" class="bottom-nav-item active" data-target="todaySection"><span>⌂</span><small>ホーム</small></button>
-  <button type="button" class="bottom-nav-item" data-target="calendarSection"><span>▣</span><small>予定</small></button>
+  <button type="button" class="bottom-nav-item active" data-target="todaySection" data-tab="home"><span>⌂</span><small>ホーム</small></button>
+  <button type="button" class="bottom-nav-item" data-target="calendarSection" data-tab="calendar"><span>▣</span><small>予定</small></button>
+  <button type="button" class="bottom-nav-item" data-target="weatherSection" data-tab="weather"><span>☀️</span><small>天気</small></button>
   <button type="button" class="bottom-nav-item" id="bottomGarbage"><span>♻️</span><small>ごみ</small></button>
   <button type="button" class="bottom-nav-item" id="bottomSettings"><span>⚙️</span><small>設定</small></button>
 </nav>
