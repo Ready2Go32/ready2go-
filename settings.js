@@ -103,6 +103,21 @@ const Settings = (() => {
   function init() {
     applyAll();
 
+    // 長い設定画面は見出しをタップして折りたためる。
+    document.querySelectorAll(".settings-section").forEach((section, index) => {
+      const title = section.querySelector(":scope > .settings-section-title");
+      if (!title) return;
+      title.tabIndex = 0;
+      title.setAttribute("role", "button");
+      title.setAttribute("aria-expanded", "true");
+      const toggle = () => {
+        const collapsed = section.classList.toggle("collapsed");
+        title.setAttribute("aria-expanded", String(!collapsed));
+      };
+      title.addEventListener("click", toggle);
+      title.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); } });
+    });
+
     const bgPicker    = document.getElementById("bgPicker");
     const themeSelect = document.getElementById("themeSelect");
     const fontSizeSel = document.getElementById("fontSize");
@@ -119,6 +134,7 @@ const Settings = (() => {
     const pauseUntil = document.getElementById("pauseUntil");
     const garbageReminder = document.getElementById("garbageReminder");
     const garbageReminderTime = document.getElementById("garbageReminderTime");
+    const eventReminderEnabled = document.getElementById("eventReminderEnabled");
     const locationMode = document.getElementById("locationMode");
     const saveStatus = document.getElementById("notificationSaveStatus");
     const validTime = value => /^([01]\d|2[0-3]):[0-5]\d$/.test(value || "");
@@ -174,6 +190,7 @@ const Settings = (() => {
         pauseUntil: pauseUntil?.value || "",
         garbageReminder: garbageReminder?.checked !== false,
         garbageReminderTime: garbageReminderTime?.value || "20:00",
+        eventReminderEnabled: eventReminderEnabled?.checked !== false,
         pref: document.getElementById("pref")?.value || "",
         region: document.getElementById("region")?.value || "",
         gpsLat: localStorage.getItem("gpsLat"),
@@ -206,6 +223,7 @@ const Settings = (() => {
     if (pauseUntil) pauseUntil.value = saved.pauseUntil || "";
     if (garbageReminder) garbageReminder.checked = saved.garbageReminder !== false;
     if (garbageReminderTime) garbageReminderTime.value = saved.garbageReminderTime || "20:00";
+    if (eventReminderEnabled) eventReminderEnabled.checked = saved.eventReminderEnabled !== false;
     if (locationMode) locationMode.value = localStorage.getItem("locationMode") || "address";
 
     if (bgPicker)    bgPicker.onchange    = onBgPickerChange;
@@ -217,8 +235,14 @@ const Settings = (() => {
     pauseUntil?.addEventListener("change", autoSaveNotifications);
     garbageReminder?.addEventListener("change", autoSaveNotifications);
     garbageReminderTime?.addEventListener("change", autoSaveNotifications);
+    eventReminderEnabled?.addEventListener("change", autoSaveNotifications);
     document.getElementById("testLineBtn")?.addEventListener("click", async () => {
-      try { await Storage.testLineNotification(); alert("LINEへテスト通知を送りました"); }
+      try {
+        await Storage.testLineNotification();
+        localStorage.setItem("lineTestSucceeded", "yes");
+        Ready2GoFeatures?.refresh?.();
+        alert("LINEへテスト通知を送りました");
+      }
       catch(e) { alert(e.message); }
     });
     document.getElementById("exportBtn")?.addEventListener("click", async () => {

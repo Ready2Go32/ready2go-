@@ -64,6 +64,7 @@
         <div id="previousNotifyTimeList" class="time-chip-list" aria-label="登録済みの前日通知時刻"></div>
       </div>
       <div class="settings-row"><label>一時停止期限</label><input type="date" id="pauseUntil"></div>
+      <div class="settings-row"><label>予定30分前通知</label><label class="toggle-switch"><input type="checkbox" id="eventReminderEnabled"><span class="toggle-slider"></span></label></div>
       <div id="notificationSaveStatus" class="auto-save-status" role="status">変更すると自動保存されます</div>
       <button type="button" id="testLineBtn" class="btn-outline-sm">LINEテスト通知</button>
     </div>
@@ -124,7 +125,7 @@
 <div id="consentModal" class="modal consent-modal" hidden>
   <div class="card consent-card">
     <h3>利用前の確認</h3>
-    <p>予定と地域設定は端末に保存され、LINE連携時は通知のためサーバーにも保存されます。位置情報は許可した場合だけ天気と地域候補に使います。詳しくは<a href="privacy.html">プライバシーポリシー</a>をご確認ください。</p>
+    <p>予定・持ち物・地域・通知設定は端末に保存され、LINE連携時は通知と同期のためサーバーにも保存されます。共有先に指定した予定はグループ内に表示されます。不具合報告へ画像を添付するかどうかは自分で選べます。位置情報は許可した場合だけ天気と地域候補に使います。詳しくは<a href="privacy.html">プライバシーポリシー</a>をご確認ください。</p>
     <label class="consent-check"><input type="checkbox" id="consentData"> 予定・設定の保存とLINE通知に同意します</label>
     <label class="consent-check"><input type="checkbox" id="consentLocation"> 位置情報の利用に同意します（任意）</label>
     <button type="button" id="consentStart" class="btn-primary">設定して始める</button>
@@ -145,6 +146,32 @@
       <div class="summary-card summary-weather"><span class="summary-icon" id="todayWeatherIcon">☁️</span><span><b>今日の天気</b><small id="todayWeatherText">読み込み中…</small></span></div>
       <button class="summary-card summary-line" id="lineStatusCard" type="button"><span class="summary-icon">💬</span><span><b>LINE通知</b><small id="lineStatusText">連携状態を確認中…</small></span></button>
     </div>
+
+    <section id="setupGuide" class="setup-guide" hidden>
+      <div class="feature-heading"><div><span class="feature-kicker">はじめの設定</span><h2>Ready2Goを使う準備</h2></div><b id="setupProgressText">0/5</b></div>
+      <div class="setup-progress"><span id="setupProgressBar"></span></div>
+      <div id="setupSteps" class="setup-steps"></div>
+    </section>
+
+    <section id="tomorrowSection" class="tomorrow-panel">
+      <div class="feature-heading"><div><span class="feature-kicker">明日の準備</span><h2 id="tomorrowDateLabel">明日</h2></div><span id="tomorrowWeatherBadge" class="weather-pill">確認中</span></div>
+      <div id="weatherAdvice" class="weather-advice" hidden></div>
+      <div class="tomorrow-grid">
+        <article class="tomorrow-block"><h3>📅 予定</h3><div id="tomorrowEvents" class="tomorrow-list">読み込み中…</div></article>
+        <article class="tomorrow-block"><h3>🎒 持ち物</h3><div id="tomorrowItems" class="tomorrow-list">予定に持ち物を登録できます</div></article>
+        <article class="tomorrow-block"><h3>🗑️ ごみ</h3><div id="tomorrowGarbage" class="tomorrow-list">地域を確認中…</div></article>
+      </div>
+    </section>
+
+    <section class="feature-hub">
+      <div class="feature-heading"><div><span class="feature-kicker">便利な機能</span><h2>Ready2Goツール</h2></div></div>
+      <div class="feature-buttons">
+        <button type="button" data-feature="notifications"><span>🔔</span><b>通知履歴</b><small>失敗確認・再送</small></button>
+        <button type="button" data-feature="municipal"><span>🏢</span><b>自治体データ</b><small>対応地域・期限</small></button>
+        <button type="button" data-feature="feedback"><span>🧪</span><b>テスト報告</b><small>不具合・投票</small></button>
+        <button type="button" data-feature="groups"><span>👥</span><b>グループ</b><small>予定を共有</small></button>
+      </div>
+    </section>
   </section>
 
   <!-- 週ナビゲーション -->
@@ -191,11 +218,13 @@
 <!-- JS -->
 <script src="app-config.js"></script>
 <script src="storage.js"></script>
+<script src="municipal-garbage-data.js"></script>
 <script src="garbage.js"></script>
 <script src="settings.js"></script>
 <script src="weather.js"></script>
 <script src="calendar.js"></script>
 <script src="dashboard.js"></script>
+<script src="features.js"></script>
 <script src="script.js"></script>
 
 </body>

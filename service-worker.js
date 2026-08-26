@@ -1,7 +1,7 @@
-const CACHE = "ready2go-v14";
+const CACHE = "ready2go-v15";
 const APP_FILES = [
   "./", "./index.html", "./style.css", "./storage.js", "./garbage.js", "./municipal-garbage-data.js",
-  "./settings.js", "./weather.js", "./calendar.js", "./dashboard.js",
+  "./settings.js", "./weather.js", "./calendar.js", "./dashboard.js", "./features.js",
   "./script.js", "./garbage-calendar.html", "./liff-init.html",
   "./privacy.html", "./terms.html",
   "./manifest.json", "./app-icon.svg", "./icon-192.png", "./icon-512.png"

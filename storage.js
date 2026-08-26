@@ -22,6 +22,24 @@ const Storage = (() => {
     return { ...extra, "Authorization": `Bearer ${getLineIdToken()}` };
   }
 
+  async function apiJson(path, options = {}) {
+    if (!hasServer()) throw new Error("LINE連携ページからログインしてください");
+    const request = { ...options, headers: authHeaders(options.headers || {}) };
+    if (request.body && typeof request.body !== "string") {
+      request.headers["Content-Type"] = "application/json";
+      request.body = JSON.stringify(request.body);
+    }
+    const response = await fetch(`${SERVER_URL}${path}`, request);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(data.error || `通信に失敗しました（${response.status}）`);
+      error.code = data.code || "";
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  }
+
   function pendingDates() {
     try { return JSON.parse(localStorage.getItem("pendingEventDates") || "[]"); }
     catch (_) { return []; }
@@ -372,6 +390,30 @@ const Storage = (() => {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "送信できませんでした");
   }
 
+  const getServerStatus = () => fetch(`${SERVER_URL}/health`, { cache: "no-store" })
+    .then(response => {
+      if (!response.ok) throw new Error("サーバー状態を確認できません");
+      return response.json();
+    });
+  const getNotificationLogs = () => apiJson("/api/notification-logs");
+  const resendNotification = id => apiJson(`/api/notification-logs/${encodeURIComponent(id)}/resend`, { method: "POST" });
+  const getFeedback = () => apiJson("/api/feedback");
+  const submitFeedback = input => apiJson("/api/feedback", { method: "POST", body: input });
+  const voteFeedback = id => apiJson(`/api/feedback/${encodeURIComponent(id)}/vote`, { method: "POST" });
+  const getGroups = () => apiJson("/api/groups");
+  const createGroup = name => apiJson("/api/groups", { method: "POST", body: { name } });
+  const joinGroup = inviteCode => apiJson("/api/groups/join", { method: "POST", body: { inviteCode } });
+  const addGroupEvent = (groupId, dateKey, event) => apiJson(`/api/groups/${encodeURIComponent(groupId)}/events/${dateKey}`, { method: "POST", body: event });
+  const deleteGroupEvent = (groupId, dateKey, eventId) => apiJson(`/api/groups/${encodeURIComponent(groupId)}/events/${dateKey}/${encodeURIComponent(eventId)}`, { method: "DELETE" });
+  async function getGroupEventsForDates(dateKeys) {
+    if (!hasServer() || !navigator.onLine || !dateKeys?.length) return {};
+    const keys = [...new Set(dateKeys)].sort();
+    const query = new URLSearchParams({ start: keys[0], end: keys[keys.length - 1] });
+    return apiJson(`/api/group-events-range?${query}`);
+  }
+  const getTestAccess = () => apiJson("/api/test/access");
+  const joinTest = inviteCode => apiJson("/api/test/join", { method: "POST", body: { inviteCode } });
+
   async function exportData() {
     let data;
     if (hasServer()) {
@@ -441,6 +483,9 @@ const Storage = (() => {
     open, getEvents, getEventsForDates, getAllEvents, saveEvents, deleteEvent, addEvent, addRecurringEvent, updateEvent,
     saveGarbageSchedule, getGarbageSchedule,
     loadUserSettings, syncUserSettings, syncAllToServer, testLineNotification, exportData, importData,
-    getLineIdToken, hasServer, updateSyncStatus
+    getLineIdToken, hasServer, updateSyncStatus, apiJson, getServerStatus,
+    getNotificationLogs, resendNotification, getFeedback, submitFeedback, voteFeedback,
+    getGroups, createGroup, joinGroup, getGroupEventsForDates, addGroupEvent, deleteGroupEvent,
+    getTestAccess, joinTest
   };
 })();

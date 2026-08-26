@@ -80,6 +80,7 @@
       localStorage.setItem("region_" + pref, regionSel.value);
       Calendar.draw();
       Dashboard?.refresh?.();
+      Ready2GoFeatures?.refresh?.();
     };
   }
 
@@ -179,6 +180,11 @@
   // ── 初回ロード ─────────────────────────────────────────
   await loadAndDraw();
   await Dashboard.init();
+  await Ready2GoFeatures.init();
+
+  const openTarget = new URLSearchParams(location.search).get("open");
+  if (openTarget === "calendar") document.getElementById("calendarSection")?.scrollIntoView();
+  if (openTarget === "tomorrow") document.getElementById("tomorrowSection")?.scrollIntoView();
 
   async function loadAndDraw() {
     try { await Weather.load(); } catch(e) { console.warn("Weather load failed:", e); }

@@ -10,6 +10,7 @@ const express    = require("express");
 const line       = require("@line/bot-sdk");
 const cron       = require("node-cron");
 const fetch      = require("node-fetch");
+const crypto     = require("crypto");
 const { loadData, saveData, getStorageMode } = require("./database");
 
 const app = express();
@@ -24,7 +25,7 @@ const lineClient = new line.messagingApi.MessagingApiClient({
 });
 
 // DATABASE_URLがあればPostgreSQL、なければ従来のdata.jsonを使用する。
-let store = { users: {}, events: {} };
+let store = { users: {}, events: {}, garbageSchedules: {}, notificationLogs: {}, feedback: [], groups: {} };
 
 // ── ミドルウェア ─────────────────────────────────────────
 // LINE WebhookはJSONミドルウェアより先に処理する。
@@ -90,10 +91,6 @@ async function handleFollow(userId) {
     console.log(`新規ユーザー登録: ${userId}`);
   }
 
-  await lineClient.replyMessage({
-    replyToken: undefined, // followイベントにはreplyTokenがないのでpushを使う
-  }).catch(() => {});
-
   // プッシュメッセージで歓迎
   await lineClient.pushMessage({
     to: userId,
@@ -107,6 +104,50 @@ async function handleFollow(userId) {
 // メッセージ受信時の処理
 async function handleMessage(userId, text, replyToken) {
   const trimmed = text.trim();
+  ensureUser(userId);
+
+  if (process.env.TEST_MODE === "true" && !store.users[userId].testAccess) {
+    await lineClient.replyMessage({ replyToken, messages: [{ type: "text", text: "Ready2Goは現在テスト中です。先にアプリを開き、グループから受け取った招待コードを入力してください。" }] });
+    return;
+  }
+
+  if (trimmed === "登録する" && store.users[userId].pendingLineEvent) {
+    const pending = store.users[userId].pendingLineEvent;
+    const end = pending.repeat === "weekly" ? new Date(Date.now() + 366 * 86400000) : new Date(`${pending.dateKey}T00:00:00`);
+    for (let day = new Date(`${pending.dateKey}T00:00:00`), count = 0; day <= end && count < 53; count++) {
+      const dateKey = getDateKey(day);
+      store.events[userId][dateKey] ||= [];
+      store.events[userId][dateKey].push(cleanEvent({
+        title: pending.title, time: pending.time, repeat: pending.repeat || "none",
+        repeatUntil: getDateKey(end), recurrenceStart: pending.dateKey, items: []
+      }));
+      if (pending.repeat !== "weekly") break;
+      day.setDate(day.getDate() + 7);
+    }
+    delete store.users[userId].pendingLineEvent;
+    await saveData(store);
+    await lineClient.replyMessage({ replyToken, messages: [{ type: "text", text: `✅ 「${pending.title}」を予定に登録しました。` }] });
+    return;
+  }
+
+  if (trimmed === "キャンセル" && store.users[userId].pendingLineEvent) {
+    delete store.users[userId].pendingLineEvent;
+    await saveData(store);
+    await lineClient.replyMessage({ replyToken, messages: [{ type: "text", text: "予定登録をキャンセルしました。" }] });
+    return;
+  }
+
+  const parsedEvent = parseLineEvent(trimmed);
+  if (parsedEvent) {
+    store.users[userId].pendingLineEvent = parsedEvent;
+    await saveData(store);
+    const repeatText = parsedEvent.repeat === "weekly" ? "（毎週・1年間）" : "";
+    await lineClient.replyMessage({
+      replyToken,
+      messages: [{ type: "text", text: `この内容で登録しますか？\n📅 ${parsedEvent.dateKey} ${parsedEvent.time}\n${parsedEvent.title}${repeatText}\n\n「登録する」または「キャンセル」と送ってください。` }]
+    });
+    return;
+  }
 
   if (trimmed === "通知オフ" || trimmed === "通知OFF") {
     if (store.users[userId]) {
@@ -146,9 +187,39 @@ async function handleMessage(userId, text, replyToken) {
     replyToken,
     messages: [{
       type: "text",
-      text: "コマンド一覧:\n・「今日の予定」— 今日のスケジュール確認\n・「通知オフ」— 朝の通知を停止\n・「通知オン」— 朝の通知を再開"
+      text: "コマンド一覧:\n・「今日の予定」— 今日のスケジュール確認\n・「8月30日 10時 歯医者」— 予定登録\n・「毎週月曜日 16時 部活」— 繰り返し登録\n・「通知オフ」— 通知を停止\n・「通知オン」— 通知を再開"
     }]
   });
+}
+
+function parseLineEvent(value) {
+  const weekly = value.match(/^毎週\s*([日月火水木金土])曜日?\s*(\d{1,2})時(?:\s*(\d{1,2})分)?\s+(.+)$/);
+  if (weekly) {
+    const dows = "日月火水木金土";
+    const targetDow = dows.indexOf(weekly[1]);
+    const date = new Date();
+    let diff = (targetDow - date.getDay() + 7) % 7;
+    if (diff === 0) diff = 7;
+    date.setDate(date.getDate() + diff);
+    return parsedLineEventResult(date, weekly[2], weekly[3], weekly[4], "weekly");
+  }
+  const dated = value.match(/^(?:(\d{4})年)?\s*(\d{1,2})月\s*(\d{1,2})日\s*(\d{1,2})時(?:\s*(\d{1,2})分)?\s+(.+)$/);
+  if (!dated) return null;
+  const now = new Date();
+  let year = Number(dated[1] || now.getFullYear());
+  let date = new Date(year, Number(dated[2]) - 1, Number(dated[3]));
+  if (!dated[1] && date < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
+    date = new Date(year + 1, Number(dated[2]) - 1, Number(dated[3]));
+  }
+  if (date.getMonth() !== Number(dated[2]) - 1 || date.getDate() !== Number(dated[3])) return null;
+  return parsedLineEventResult(date, dated[4], dated[5], dated[6], "none");
+}
+
+function parsedLineEventResult(date, hourValue, minuteValue, titleValue, repeat) {
+  const hour = Number(hourValue), minute = Number(minuteValue || 0);
+  const title = String(titleValue || "").trim();
+  if (hour > 23 || minute > 59 || !title || title.length > 120) return null;
+  return { dateKey: getDateKey(date), time: `${String(hour).padStart(2,"0")}:${String(minute).padStart(2,"0")}`, title, repeat };
 }
 
 // ── 予定CRUD API（フロントエンドから呼び出し） ───────────────
@@ -169,7 +240,7 @@ function ensureUser(userId) {
 
 const USER_SETTING_KEYS = [
   "notifyEnabled", "todayNotifyTimes", "previousNotifyTimes", "pauseUntil",
-  "garbageReminder", "garbageReminderTime", "pref", "region", "area",
+  "garbageReminder", "garbageReminderTime", "eventReminderEnabled", "pref", "region", "area",
   "locationMode", "gpsLat", "gpsLon", "garbageSchedule"
 ];
 
@@ -192,6 +263,12 @@ function cleanEvent(event) {
   const safe = JSON.parse(JSON.stringify(event));
   safe.title = title;
   safe.time = time;
+  safe.repeat = ["none", "daily", "weekly", "monthly"].includes(safe.repeat) ? safe.repeat : "none";
+  safe.items = Array.isArray(safe.items) ? safe.items.slice(0, 30).map(item => ({
+    text: String(typeof item === "string" ? item : item?.text || "").trim().slice(0, 100),
+    done: typeof item === "object" && item?.done === true
+  })).filter(item => item.text) : [];
+  for (const key of Object.keys(safe)) if (key.startsWith("_")) delete safe[key];
   return safe;
 }
 
@@ -239,6 +316,10 @@ async function requireUserAuth(req, res, next) {
     const payload = await verifyLineIdToken(idToken);
     req.userId = payload.sub;
     ensureUser(req.userId);
+    const testGatePath = req.path === "/api/test/access" || req.path === "/api/test/join";
+    if (process.env.TEST_MODE === "true" && !store.users[req.userId].testAccess && !testGatePath) {
+      return res.status(403).json({ error: "このテスト版は招待された人だけ利用できます", code: "TEST_ACCESS_REQUIRED" });
+    }
     next();
   } catch (error) {
     res.status(401).json({ error: error.message });
@@ -264,6 +345,133 @@ app.get("/api/events-range", requireUserAuth, (req, res) => {
     if (dateKey >= start && dateKey <= end) result[dateKey] = list;
   }
   res.json(result);
+});
+
+// ── 公開前テスト・改善報告・グループ共有 ──────────────────
+app.get("/api/test/access", requireUserAuth, (req, res) => {
+  res.json({ required: process.env.TEST_MODE === "true", allowed: process.env.TEST_MODE !== "true" || store.users[req.userId].testAccess === true });
+});
+
+app.post("/api/test/join", requireUserAuth, async (req, res) => {
+  const expected = String(process.env.TEST_INVITE_CODE || "").trim();
+  const actual = String(req.body?.inviteCode || "").trim();
+  if (!expected || actual !== expected) return res.status(400).json({ error: "招待コードが正しくありません" });
+  store.users[req.userId].testAccess = true;
+  await saveData(store);
+  res.json({ ok: true });
+});
+
+function safeFeedback(item, userId) {
+  return {
+    id: item.id, type: item.type, message: item.message, createdAt: item.createdAt,
+    hasScreenshot: !!item.screenshot, votes: item.votes?.length || 0,
+    voted: item.votes?.includes(userId) || false
+  };
+}
+
+app.get("/api/feedback", requireUserAuth, (req, res) => {
+  res.json((store.feedback || []).slice(-40).reverse().map(item => safeFeedback(item, req.userId)));
+});
+
+app.post("/api/feedback", requireUserAuth, async (req, res) => {
+  const type = ["bug", "idea"].includes(req.body?.type) ? req.body.type : "idea";
+  const message = String(req.body?.message || "").trim();
+  const screenshot = String(req.body?.screenshot || "");
+  if (!message || message.length > 500) return res.status(400).json({ error: "内容を1〜500文字で入力してください" });
+  if (screenshot && (!/^data:image\/(png|jpeg|webp);base64,/i.test(screenshot) || screenshot.length > 700000)) {
+    return res.status(400).json({ error: "画像は500KB程度までにしてください" });
+  }
+  const item = { id: crypto.randomUUID(), type, message, screenshot, createdAt: new Date().toISOString(), authorId: req.userId, votes: [] };
+  store.feedback ||= [];
+  store.feedback.push(item);
+  if (store.feedback.length > 300) store.feedback = store.feedback.slice(-300);
+  await saveData(store);
+  res.json(safeFeedback(item, req.userId));
+});
+
+app.post("/api/feedback/:id/vote", requireUserAuth, async (req, res) => {
+  const item = (store.feedback || []).find(entry => entry.id === req.params.id);
+  if (!item) return res.status(404).json({ error: "報告が見つかりません" });
+  item.votes ||= [];
+  const index = item.votes.indexOf(req.userId);
+  if (index >= 0) item.votes.splice(index, 1); else item.votes.push(req.userId);
+  await saveData(store);
+  res.json(safeFeedback(item, req.userId));
+});
+
+function groupForUser(groupId, userId) {
+  const group = (store.groups || {})[groupId];
+  return group?.members?.includes(userId) ? group : null;
+}
+
+function publicGroup(group, userId) {
+  return { id: group.id, name: group.name, memberCount: group.members.length,
+    inviteCode: group.ownerId === userId ? group.inviteCode : "", isOwner: group.ownerId === userId };
+}
+
+app.get("/api/groups", requireUserAuth, (req, res) => {
+  res.json(Object.values(store.groups || {}).filter(group => group.members?.includes(req.userId)).map(group => publicGroup(group, req.userId)));
+});
+
+app.post("/api/groups", requireUserAuth, async (req, res) => {
+  const name = String(req.body?.name || "").trim();
+  if (!name || name.length > 40) return res.status(400).json({ error: "グループ名を1〜40文字で入力してください" });
+  const id = crypto.randomUUID();
+  const group = { id, name, inviteCode: crypto.randomBytes(4).toString("hex").toUpperCase(), ownerId: req.userId, members: [req.userId], events: {}, createdAt: new Date().toISOString() };
+  store.groups ||= {};
+  store.groups[id] = group;
+  await saveData(store);
+  res.json(publicGroup(group, req.userId));
+});
+
+app.post("/api/groups/join", requireUserAuth, async (req, res) => {
+  const code = String(req.body?.inviteCode || "").trim().toUpperCase();
+  const group = Object.values(store.groups || {}).find(entry => entry.inviteCode === code);
+  if (!group) return res.status(404).json({ error: "招待コードが見つかりません" });
+  if (!group.members.includes(req.userId)) group.members.push(req.userId);
+  await saveData(store);
+  res.json(publicGroup(group, req.userId));
+});
+
+app.get("/api/group-events-range", requireUserAuth, (req, res) => {
+  const start = String(req.query.start || ""), end = String(req.query.end || "");
+  if (!validDateKey(start) || !validDateKey(end)) return res.status(400).json({ error: "期間が正しくありません" });
+  const result = {};
+  for (const group of Object.values(store.groups || {})) {
+    if (!group.members?.includes(req.userId)) continue;
+    for (const [dateKey, events] of Object.entries(group.events || {})) {
+      if (dateKey < start || dateKey > end) continue;
+      result[dateKey] ||= [];
+      result[dateKey].push(...events.map(event => ({ ...event, _shared: true, _groupId: group.id, _groupName: group.name, _canDelete: event.createdBy === req.userId || group.ownerId === req.userId })));
+    }
+  }
+  res.json(result);
+});
+
+app.post("/api/groups/:groupId/events/:dateKey", requireUserAuth, async (req, res) => {
+  const group = groupForUser(req.params.groupId, req.userId);
+  if (!group) return res.status(404).json({ error: "グループが見つかりません" });
+  if (!validDateKey(req.params.dateKey)) return res.status(400).json({ error: "日付が正しくありません" });
+  try {
+    const event = cleanEvent(req.body);
+    event.id = crypto.randomUUID(); event.createdBy = req.userId;
+    group.events ||= {}; group.events[req.params.dateKey] ||= [];
+    group.events[req.params.dateKey].push(event);
+    await saveData(store);
+    res.json({ ok: true, id: event.id });
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+
+app.delete("/api/groups/:groupId/events/:dateKey/:eventId", requireUserAuth, async (req, res) => {
+  const group = groupForUser(req.params.groupId, req.userId);
+  if (!group) return res.status(404).json({ error: "グループが見つかりません" });
+  const list = group.events?.[req.params.dateKey] || [];
+  const event = list.find(entry => entry.id === req.params.eventId);
+  if (!event) return res.status(404).json({ error: "予定が見つかりません" });
+  if (event.createdBy !== req.userId && group.ownerId !== req.userId) return res.status(403).json({ error: "この予定は削除できません" });
+  group.events[req.params.dateKey] = list.filter(entry => entry.id !== req.params.eventId);
+  await saveData(store);
+  res.json({ ok: true });
 });
 
 app.get("/api/events/:dateKey", requireUserAuth, (req, res) => {
@@ -382,7 +590,7 @@ app.post("/api/user-settings", requireUserAuth, async (req, res) => {
 // ── ユーザー本人のバックアップ・復元 ─────────────────────
 const BACKUP_SETTING_KEYS = [
   "notifyEnabled", "todayNotifyTimes", "previousNotifyTimes", "pauseUntil",
-  "garbageReminder", "garbageReminderTime", "pref", "region", "area",
+  "garbageReminder", "garbageReminderTime", "eventReminderEnabled", "pref", "region", "area",
   "locationMode", "gpsLat", "gpsLon", "garbageSchedule"
 ];
 
@@ -604,13 +812,32 @@ async function pushOnce(userId, key, text) {
   const user = store.users[userId];
   if (!user.sentNotifications) user.sentNotifications = {};
   if (user.sentNotifications[key]) return;
-  await lineClient.pushMessage({ to: userId, messages: [{ type: "text", text }] });
-  user.sentNotifications[key] = new Date().toISOString();
-  const cutoff = Date.now() - 14 * 86400000;
-  for (const [k,v] of Object.entries(user.sentNotifications)) {
-    if (new Date(v).getTime() < cutoff) delete user.sentNotifications[k];
+  const type = String(key).split(":")[0] || "notification";
+  try {
+    await lineClient.pushMessage({ to: userId, messages: [{ type: "text", text }] });
+    user.sentNotifications[key] = new Date().toISOString();
+    const cutoff = Date.now() - 14 * 86400000;
+    for (const [k,v] of Object.entries(user.sentNotifications)) {
+      if (new Date(v).getTime() < cutoff) delete user.sentNotifications[k];
+    }
+    recordNotification(userId, { type, status: "sent", text });
+    await saveData(store);
+  } catch (error) {
+    recordNotification(userId, { type, status: "failed", text, error: error.message });
+    await saveData(store).catch(() => {});
+    throw error;
   }
-  saveData(store);
+}
+
+function recordNotification(userId, entry) {
+  store.notificationLogs ||= {};
+  store.notificationLogs[userId] ||= [];
+  store.notificationLogs[userId].push({
+    id: crypto.randomUUID(), createdAt: new Date().toISOString(),
+    type: entry.type || "notification", status: entry.status || "sent",
+    text: String(entry.text || "").slice(0, 1500), error: String(entry.error || "").slice(0, 300)
+  });
+  store.notificationLogs[userId] = store.notificationLogs[userId].slice(-100);
 }
 
 async function sendScheduledNotifications() {
@@ -620,6 +847,7 @@ async function sendScheduledNotifications() {
     const user = store.users[userId];
     if (isPaused(user, now.dateKey)) continue;
     try {
+      await retryFailedNotification(userId);
       const todayTimes = user.todayNotifyTimes || [process.env.MORNING_NOTIFY_TIME || "07:00"];
       const previousTimes = user.previousNotifyTimes || [];
       if (todayTimes.includes(now.time)) {
@@ -632,6 +860,17 @@ async function sendScheduledNotifications() {
         const garbageText = buildGarbageReminder(user);
         if (garbageText) await pushOnce(userId, `garbage:${now.dateKey}:${now.time}`, garbageText);
       }
+      const reminderTime = user.eventReminderEnabled === false ? "" : addMinutesToTime(now.time, 30);
+      const personalUpcoming = reminderTime
+        ? (store.events[userId]?.[now.dateKey] || []).filter(event => event.time === reminderTime) : [];
+      const groupUpcoming = Object.values(store.groups || {})
+        .filter(group => group.members?.includes(userId))
+        .flatMap(group => reminderTime ? (group.events?.[now.dateKey] || []).filter(event => event.time === reminderTime)
+          .map(event => ({ ...event, sharedGroupName: group.name, reminderGroupId: group.id })) : []);
+      const upcoming = [...personalUpcoming, ...groupUpcoming];
+      for (const event of upcoming) {
+        await pushOnce(userId, `event:${now.dateKey}:${event.time}:${event.title}:${event.reminderGroupId || "personal"}`, await buildEventReminder(userId, event));
+      }
     } catch(e) {
       console.error(`通知送信失敗: ${userId}`, e.message);
     }
@@ -639,14 +878,56 @@ async function sendScheduledNotifications() {
   }
 }
 
+function addMinutesToTime(time, minutes) {
+  const [hour, minute] = time.split(":").map(Number);
+  const total = hour * 60 + minute + minutes;
+  if (total >= 1440) return "";
+  return `${String(Math.floor(total / 60)).padStart(2,"0")}:${String(total % 60).padStart(2,"0")}`;
+}
+
+async function buildEventReminder(userId, event) {
+  const user = store.users[userId] || {};
+  let weather = "";
+  try {
+    const lat = user.gpsLat || 35.69, lon = user.gpsLon || 139.69;
+    const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,precipitation&timezone=Asia%2FTokyo`);
+    const data = await response.json();
+    const code = Number(data.current?.weather_code || 0), temperature = Math.round(data.current?.temperature_2m || 0);
+    weather = `\n${wmoEmoji(code)} 現在は${wmoText(code)}・${temperature}℃${code >= 51 ? "。傘や雨具も確認しましょう" : ""}`;
+  } catch (_) {}
+  const items = (event.items || []).filter(item => !(typeof item === "object" && item.done)).map(item => typeof item === "string" ? item : item.text).filter(Boolean);
+  return `⏰ 30分後の予定\n${event.time} ${event.title}${event.sharedGroupName ? `（👥${event.sharedGroupName}）` : ""}${weather}${items.length ? `\n🎒 ${items.join("・")}` : ""}`;
+}
+
+async function retryFailedNotification(userId) {
+  const logs = store.notificationLogs?.[userId] || [];
+  const failed = [...logs].reverse().find(log => log.status === "failed" && (log.retryCount || 0) < 2
+    && Date.now() - new Date(log.createdAt).getTime() >= 2 * 60000
+    && Date.now() - new Date(log.createdAt).getTime() < 24 * 3600000);
+  if (!failed) return;
+  failed.retryCount = (failed.retryCount || 0) + 1;
+  try {
+    await lineClient.pushMessage({ to: userId, messages: [{ type: "text", text: failed.text }] });
+    failed.status = "retried";
+    recordNotification(userId, { type:`auto-retry-${failed.type}`, status:"sent", text:failed.text });
+  } catch (error) {
+    failed.error = error.message;
+  }
+  await saveData(store);
+}
+
 async function buildDailyMessage(userId, dayOffset = 0) {
   const target = new Date(); target.setDate(target.getDate() + dayOffset);
   const targetKey = getDateKey(target);
-  const events  = (store.events[userId] || {})[targetKey] || [];
+  const personalEvents = (store.events[userId] || {})[targetKey] || [];
+  const sharedEvents = Object.values(store.groups || {})
+    .filter(group => group.members?.includes(userId))
+    .flatMap(group => (group.events?.[targetKey] || []).map(event => ({ ...event, sharedGroupName: group.name })));
+  const events = [...personalEvents, ...sharedEvents];
   const user    = store.users[userId] || {};
 
   // 天気取得
-  let weatherText = "";
+  let weatherText = "", weatherAdvice = "";
   try {
     const lat = user.gpsLat || 35.69;
     const lon = user.gpsLon || 139.69;
@@ -662,6 +943,11 @@ async function buildDailyMessage(userId, dayOffset = 0) {
       const min    = Math.round(wData.daily.temperature_2m_min[dayOffset]);
       const icon   = wmoEmoji(code);
       weatherText  = `${icon} 天気: ${wmoText(code)}\n🌡️ ${min}℃ 〜 ${max}℃`;
+      const advice = [];
+      if (code >= 51) advice.push("傘を忘れずに");
+      if (max >= 30) advice.push("暑さに気をつけて、水分を用意");
+      if (min <= 5) advice.push("冷え込みに備えて上着を確認");
+      weatherAdvice = advice.length ? `\n💡 ${advice.join("・")}` : "";
     }
   } catch(e) { weatherText = "（天気の取得に失敗しました）"; }
 
@@ -672,10 +958,13 @@ async function buildDailyMessage(userId, dayOffset = 0) {
   // 予定
   let eventsText = "";
   if (events.length === 0) {
-    eventsText = "📅 今日の予定はありません";
+    eventsText = `📅 ${dayOffset ? "明日" : "今日"}の予定はありません`;
   } else {
     const sorted = [...events].sort((a,b) => a.time.localeCompare(b.time));
-    eventsText = "📅 今日の予定:\n" + sorted.map(ev => `  ${ev.time} ${ev.title}`).join("\n");
+    eventsText = `📅 ${dayOffset ? "明日" : "今日"}の予定:\n` + sorted.map(ev => {
+      const items = Array.isArray(ev.items) ? ev.items.filter(item => !item.done).map(item => item.text).filter(Boolean) : [];
+      return `  ${ev.time} ${ev.title}${ev.sharedGroupName ? `（👥${ev.sharedGroupName}）` : ""}${items.length ? `\n    🎒 ${items.join("・")}` : ""}`;
+    }).join("\n");
   }
 
   return `━━━━━━━━━━━━━━━
@@ -683,7 +972,7 @@ async function buildDailyMessage(userId, dayOffset = 0) {
 ${dateStr}
 ━━━━━━━━━━━━━━━
 
-${weatherText}
+${weatherText}${weatherAdvice}
 
 ${eventsText}
 
@@ -714,10 +1003,36 @@ function buildGarbageReminder(user) {
 }
 
 app.post("/api/test-notification", requireUserAuth, async (req, res) => {
+  const text = "✅ Ready2Goのテスト通知です。LINE連携は正常です。";
   try {
-    await lineClient.pushMessage({ to: req.userId, messages: [{ type: "text", text: "✅ Ready2Goのテスト通知です。LINE連携は正常です。" }] });
+    await lineClient.pushMessage({ to: req.userId, messages: [{ type: "text", text }] });
+    recordNotification(req.userId, { type: "test", status: "sent", text });
+    await saveData(store);
     res.json({ ok: true });
-  } catch(e) { res.status(502).json({ error: "LINEテスト通知を送れませんでした" }); }
+  } catch(e) {
+    recordNotification(req.userId, { type: "test", status: "failed", text, error: e.message });
+    await saveData(store).catch(() => {});
+    res.status(502).json({ error: "LINEテスト通知を送れませんでした" });
+  }
+});
+
+app.get("/api/notification-logs", requireUserAuth, (req, res) => {
+  res.json((store.notificationLogs?.[req.userId] || []).slice().reverse());
+});
+
+app.post("/api/notification-logs/:id/resend", requireUserAuth, async (req, res) => {
+  const original = (store.notificationLogs?.[req.userId] || []).find(entry => entry.id === req.params.id);
+  if (!original) return res.status(404).json({ error: "通知履歴が見つかりません" });
+  try {
+    await lineClient.pushMessage({ to: req.userId, messages: [{ type: "text", text: original.text }] });
+    recordNotification(req.userId, { type: `resend-${original.type}`, status: "sent", text: original.text });
+    await saveData(store);
+    res.json({ ok: true });
+  } catch (error) {
+    recordNotification(req.userId, { type: `resend-${original.type}`, status: "failed", text: original.text, error: error.message });
+    await saveData(store).catch(() => {});
+    res.status(502).json({ error: "通知を再送できませんでした" });
+  }
 });
 
 function wmoEmoji(code) {
@@ -754,10 +1069,13 @@ app.get("/health", (_, res) => res.json({
   ok: true,
   users: Object.keys(store.users).length,
   storage: getStorageMode(),
+  startedAt: SERVER_STARTED_AT,
+  checkedAt: new Date().toISOString(),
 }));
 
 // ── サーバー起動 ─────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
+const SERVER_STARTED_AT = new Date().toISOString();
 
 async function startServer() {
   store = await loadData();

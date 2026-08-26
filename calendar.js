@@ -78,7 +78,11 @@ const Calendar = (() => {
     const todayKey = keyFromDate(new Date());
     const dateKeys = dates.map(keyFromDate);
     const eventsByDate = await Storage.getEventsForDates(dateKeys).catch(() => ({}));
-    const eventLists = dateKeys.map(dateKey => eventsByDate[dateKey] || []);
+    const sharedByDate = await Storage.getGroupEventsForDates(dateKeys).catch(() => ({}));
+    const eventLists = dateKeys.map(dateKey => [
+      ...(eventsByDate[dateKey] || []).map((event, index) => ({ ...event, _localIndex: index })),
+      ...(sharedByDate[dateKey] || [])
+    ]);
 
     let renderedDays = 0;
     for (let dateIndex = 0; dateIndex < dates.length; dateIndex++) {
@@ -133,7 +137,7 @@ const Calendar = (() => {
 
       // 予定一覧
       const events = eventLists[dateIndex]
-        .map((ev, originalIdx) => ({ ev, originalIdx }))
+        .map(ev => ({ ev, originalIdx: ev._localIndex }))
         .sort((a, b) => String(a.ev.time || "").localeCompare(String(b.ev.time || "")));
       // 予定一覧では、予定もごみ収集もない日は表示しない。
       if (viewMode === "agenda" && events.length === 0 && garbageTypes.length === 0) continue;
@@ -141,20 +145,22 @@ const Calendar = (() => {
       const visibleEvents = viewMode === "month" ? events.slice(0, 3) : events;
       visibleEvents.forEach(({ ev, originalIdx }) => {
         const div = document.createElement("div");
-        div.className = "event";
+        div.className = `event${ev._shared ? " shared-event" : ""}`;
         div.innerHTML =
-          `<span class="event-text"><span class="event-time">${escapeHtml(ev.time || "--:--")}</span><span class="event-title">${escapeHtml(ev.title)}</span></span>`
-          + `<span class="del-btn" title="削除">✕</span>`;
+          `<span class="event-text"><span class="event-time">${escapeHtml(ev.time || "--:--")}</span><span class="event-title">${escapeHtml(ev.title)}${ev._shared ? ` <small>👥${escapeHtml(ev._groupName || "共有")}</small>` : ""}</span></span>`
+          + `${!ev._shared || ev._canDelete ? '<span class="del-btn" title="削除">✕</span>' : ""}`;
 
         div.onclick = e => {
           e.stopPropagation();
-          openModal(key, originalIdx);
+          ev._shared ? openSharedModal(key, ev) : openModal(key, originalIdx);
         };
-        div.querySelector(".del-btn").onclick = async e => {
+        div.querySelector(".del-btn")?.addEventListener("click", async e => {
           e.stopPropagation();
-          await Storage.deleteEvent(key, originalIdx);
+          if (ev._shared) await Storage.deleteGroupEvent(ev._groupId, key, ev.id);
+          else await Storage.deleteEvent(key, originalIdx);
+          window.dispatchEvent(new Event("ready2go:datachange"));
           draw();
-        };
+        });
         box.appendChild(div);
       });
       if (viewMode === "month" && events.length > visibleEvents.length) {
@@ -184,7 +190,9 @@ const Calendar = (() => {
     const isEdit  = eventIdx !== null;
     const current = isEdit
       ? list[eventIdx]
-      : { title: "", time: "09:00", repeat: "none", repeatUntil: dateKey };
+      : { title: "", time: "09:00", repeat: "none", repeatUntil: dateKey, items: [] };
+    const groups = !isEdit ? await Storage.getGroups().catch(() => []) : [];
+    const groupOptions = groups.map(group => `<option value="${escapeHtml(group.id)}">👥 ${escapeHtml(group.name)}</option>`).join("");
 
     const overlay = document.createElement("div");
     overlay.className = "modal";
@@ -210,6 +218,11 @@ const Calendar = (() => {
           </div>
           <small class="form-help">時計から選ぶか、数字4桁で入力（例：930 → 09:30、1830 → 18:30）</small>
         </div>
+        <div class="form-group">
+          <label>持ち物・準備（1行に1つ）</label>
+          <textarea id="m-items" rows="3" placeholder="受験票&#10;筆記用具&#10;傘">${escapeHtml((current.items || []).map(item => typeof item === "string" ? item : item.text).filter(Boolean).join("\n"))}</textarea>
+        </div>
+        ${!isEdit && groups.length ? `<div class="form-group"><label>保存先</label><select id="m-group"><option value="">自分だけの予定</option>${groupOptions}</select><small class="form-help">共有先を選ぶと、そのグループのメンバーにも表示されます。</small></div>` : ""}
         <div class="form-row">
           <div class="form-group"><label>繰り返し</label><select id="m-repeat">
             <option value="none">なし</option><option value="daily">毎日</option>
@@ -245,6 +258,7 @@ const Calendar = (() => {
       if (!confirm(`「${current.title}」を削除しますか？`)) return;
       await Storage.deleteEvent(dateKey, eventIdx);
       overlay.remove();
+      window.dispatchEvent(new Event("ready2go:datachange"));
       draw();
     });
 
@@ -254,6 +268,13 @@ const Calendar = (() => {
       const newTime     = normalizeTime(tmDigits.value) || tmInput.value;
       const repeat = overlay.querySelector("#m-repeat").value;
       const repeatUntil = overlay.querySelector("#m-repeat-until").value;
+      const oldItems = Array.isArray(current.items) ? current.items : [];
+      const itemTexts = overlay.querySelector("#m-items").value.split(/[\n、,]+/).map(value => value.trim()).filter(Boolean).slice(0, 30);
+      const items = itemTexts.map(text => ({
+        text,
+        done: !!oldItems.find(item => (typeof item === "string" ? item : item.text) === text)?.done
+      }));
+      const groupId = overlay.querySelector("#m-group")?.value || "";
 
       if (!newTitle) {
         overlay.querySelector("#m-title").classList.add("input-error");
@@ -266,9 +287,11 @@ const Calendar = (() => {
         return;
       }
 
-      const newEvent = { title: newTitle, time: newTime, repeat, repeatUntil };
+      const newEvent = { title: newTitle, time: newTime, repeat, repeatUntil, items };
 
-      if (isEdit && newDate !== dateKey) {
+      if (!isEdit && groupId) {
+        await addRecurringGroupEvent(groupId, newDate, newEvent);
+      } else if (isEdit && newDate !== dateKey) {
         await Storage.deleteEvent(dateKey, eventIdx);
         await Storage.addRecurringEvent(newDate, newEvent);
       } else if (isEdit) {
@@ -278,8 +301,47 @@ const Calendar = (() => {
       }
 
       overlay.remove();
+      window.dispatchEvent(new Event("ready2go:datachange"));
       draw();
     };
+  }
+
+  async function addRecurringGroupEvent(groupId, startKey, event) {
+    const until = event.repeatUntil || startKey;
+    let date = new Date(`${startKey}T00:00:00`);
+    const end = new Date(`${until}T23:59:59`);
+    let count = 0;
+    while (date <= end && count < 370) {
+      await Storage.addGroupEvent(groupId, keyFromDate(date), { ...event, recurrenceStart: startKey });
+      count++;
+      if (event.repeat === "none") break;
+      if (event.repeat === "daily") date.setDate(date.getDate() + 1);
+      else if (event.repeat === "weekly") date.setDate(date.getDate() + 7);
+      else if (event.repeat === "monthly") date.setMonth(date.getMonth() + 1);
+      else break;
+    }
+  }
+
+  function openSharedModal(dateKey, event) {
+    const overlay = document.createElement("div");
+    overlay.className = "modal";
+    const items = (event.items || []).map(item => typeof item === "string" ? item : item.text).filter(Boolean);
+    overlay.innerHTML = `<div class="card"><div class="card-header"><h3>👥 共有予定</h3><button class="card-close">✕</button></div>
+      <p><b>${escapeHtml(event.time || "--:--")} ${escapeHtml(event.title)}</b></p>
+      <p class="form-help">${escapeHtml(event._groupName || "共有グループ")}・${escapeHtml(dateKey)}</p>
+      ${items.length ? `<div class="shared-items"><b>🎒 持ち物</b><ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+      ${event._canDelete ? '<button type="button" class="btn-danger" id="sharedDelete">この共有予定を削除</button>' : ""}
+      <div class="form-actions"><button type="button" class="btn-primary" id="sharedClose">閉じる</button></div></div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.querySelector(".card-close").onclick = close;
+    overlay.querySelector("#sharedClose").onclick = close;
+    overlay.onclick = e => { if (e.target === overlay) close(); };
+    overlay.querySelector("#sharedDelete")?.addEventListener("click", async () => {
+      if (!confirm(`「${event.title}」をグループから削除しますか？`)) return;
+      await Storage.deleteGroupEvent(event._groupId, dateKey, event.id);
+      close(); window.dispatchEvent(new Event("ready2go:datachange")); draw();
+    });
   }
 
   function escapeHtml(str) {

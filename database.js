@@ -5,7 +5,9 @@ const { Pool } = require("pg");
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DATA_FILE = path.join(DATA_DIR, "data.json");
-const EMPTY_STORE = { users: {}, events: {}, garbageSchedules: {} };
+const EMPTY_STORE = {
+  users: {}, events: {}, garbageSchedules: {}, notificationLogs: {}, feedback: [], groups: {}
+};
 
 let pool = null;
 let storageMode = "file";
@@ -18,6 +20,10 @@ function normalizeStore(value) {
     events: data.events && typeof data.events === "object" ? data.events : {},
     garbageSchedules: data.garbageSchedules && typeof data.garbageSchedules === "object"
       ? data.garbageSchedules : {},
+    notificationLogs: data.notificationLogs && typeof data.notificationLogs === "object"
+      ? data.notificationLogs : {},
+    feedback: Array.isArray(data.feedback) ? data.feedback : [],
+    groups: data.groups && typeof data.groups === "object" ? data.groups : {},
   };
 }
 

@@ -24,5 +24,6 @@ const MunicipalGarbageData = (() => {
   };
   function normalize(v){const value=String(v||"").trim().replace(/[\s　]/g,"").replace(/[一１]丁目$/,"1丁目").replace(/[二２]丁目$/,"2丁目").replace(/[三３]丁目$/,"3丁目").replace(/[四４]丁目$/,"4丁目").replace(/[五５]丁目$/,"5丁目").replace(/[六６]丁目$/,"6丁目").replace(/[七７]丁目$/,"7丁目").replace(/[八８]丁目$/,"8丁目");return /^(忠生[1-4]|玉川学園[1-8])$/.test(value)?`${value}丁目`:value;}
   function find(pref,region,area){if(pref!=="東京都"||region!=="町田市")return null;return /^(忠生[1-4]丁目|玉川学園[1-8]丁目)$/.test(normalize(area))?JSON.parse(JSON.stringify(schedule)):null;}
-  return {find};
+  function list(){return [{pref:"東京都",region:"町田市",areas:["忠生1～4丁目","玉川学園1～8丁目"],district:schedule.district,sourceUrl:schedule.sourceUrl,checkedAt:schedule.checkedAt,validFrom:schedule.validFrom,validUntil:schedule.validUntil,note:schedule.note}];}
+  return {find,list};
 })();
