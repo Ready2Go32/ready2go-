@@ -9,9 +9,6 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="app-icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -31,15 +28,21 @@
     </div>
   </div>
   <div class="topbar-right">
-    <button type="button" class="menu-trigger" id="menuTrigger" aria-label="メニュー">
+    <button type="button" class="menu-trigger" id="menuTrigger" aria-label="設定を開く" aria-controls="settings" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
   </div>
 </header>
 
 <!-- ───── 設定パネル（スライドイン） ───── -->
-<div id="settings" class="settings-panel">
+<div id="settingsScrim" class="settings-scrim" hidden></div>
+<div id="settings" class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" aria-hidden="true" tabindex="-1">
   <div class="settings-inner">
+    <div class="settings-panel-header">
+      <div><small>Ready2Go</small><h2 id="settingsTitle">設定</h2></div>
+      <button type="button" id="closeSettingsBtn" class="settings-close" aria-label="設定を閉じる">✕</button>
+    </div>
+    <div id="authStatus" class="settings-note auth-status" role="status">LINE連携を確認中…</div>
 
     <div class="settings-section">
       <p class="settings-section-title">🗑 ゴミ収集</p>
@@ -53,6 +56,7 @@
 
     <div class="settings-section">
       <p class="settings-section-title">🔔 LINE通知</p>
+      <div class="settings-row"><label>すべての通知</label><label class="toggle-switch"><input type="checkbox" id="notifyEnabled"><span class="toggle-slider"></span></label></div>
       <div class="notification-time-setting">
         <label>当日通知（複数可）</label>
         <div class="time-add-row"><input type="time" id="todayNotifyTimePicker" aria-label="追加する当日通知時刻"><button type="button" id="addTodayNotifyTime" class="time-add-btn">追加</button></div>
@@ -77,6 +81,16 @@
     </div>
 
     <div class="settings-section">
+      <p class="settings-section-title">💾 バックアップ</p>
+      <p class="settings-note">予定・持ち物・通知設定を保存し、別の端末でも復元できます。</p>
+      <div class="settings-action-grid">
+        <button type="button" id="exportBtn" class="btn-outline-sm">バックアップを保存</button>
+        <button type="button" id="importBtn" class="btn-outline-sm">バックアップを復元</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+
+    <div class="settings-section">
       <p class="settings-section-title">🎨 外観</p>
       <div class="settings-row">
         <label>テーマカラー</label>
@@ -90,10 +104,10 @@
       <div class="settings-row">
         <label>文字サイズ</label>
         <select id="fontSize">
-          <option value="13">小</option>
-          <option value="15" selected>中</option>
-          <option value="17">大</option>
-          <option value="19">特大</option>
+          <option value="14">小</option>
+          <option value="16" selected>中</option>
+          <option value="18">大</option>
+          <option value="20">特大</option>
         </select>
       </div>
       <div class="settings-row">
@@ -115,16 +129,24 @@
     </div>
 
     <div class="settings-section">
+      <p class="settings-section-title">👤 アカウント</p>
+      <button type="button" id="reloginBtn" class="btn-outline-sm">LINEでログインし直す</button>
+      <p class="settings-note">削除すると、サーバー上の予定・設定・通知履歴と、自分が作成した共有グループが削除されます。</p>
+      <button type="button" id="deleteAccountBtn" class="btn-danger">アカウントと保存データを削除</button>
+    </div>
+
+    <div class="settings-section">
       <p class="settings-section-title">ℹ️ このアプリについて</p>
       <a class="settings-menu-item" href="privacy.html"><span>プライバシーポリシー</span><span class="arrow">›</span></a>
       <a class="settings-menu-item" href="terms.html"><span>利用規約</span><span class="arrow">›</span></a>
+      <p id="appVersion" class="settings-note">バージョンを確認中…</p>
     </div>
   </div>
 </div>
 
-<div id="consentModal" class="modal consent-modal" hidden>
+<div id="consentModal" class="modal consent-modal" role="dialog" aria-modal="true" aria-labelledby="consentTitle" hidden>
   <div class="card consent-card">
-    <h3>利用前の確認</h3>
+    <h3 id="consentTitle">利用前の確認</h3>
     <p>予定・持ち物・地域・通知設定は端末に保存され、LINE連携時は通知と同期のためサーバーにも保存されます。共有先に指定した予定はグループ内に表示されます。不具合報告へ画像を添付するかどうかは自分で選べます。位置情報は許可した場合だけ天気と地域候補に使います。詳しくは<a href="privacy.html">プライバシーポリシー</a>をご確認ください。</p>
     <label class="consent-check"><input type="checkbox" id="consentData"> 予定・設定の保存とLINE通知に同意します</label>
     <label class="consent-check"><input type="checkbox" id="consentLocation"> 位置情報の利用に同意します（任意）</label>
@@ -138,13 +160,13 @@
   <section id="todaySection" class="today-section app-section app-tab-panel" data-tab-panel="home">
     <div class="today-heading">
       <div><p class="today-eyebrow" id="todayDateLabel">今日</p><h1>今日のまとめ</h1></div>
-      <span id="connectionBadge" class="status-chip">確認中</span>
+      <span id="connectionBadge" class="status-chip" role="status" aria-live="polite">確認中</span>
     </div>
     <div class="today-cards">
-      <button class="summary-card summary-event" id="nextEventCard" type="button"><span class="summary-icon">📅</span><span><b>次の予定</b><small id="nextEventText">読み込み中…</small></span></button>
-      <button class="summary-card summary-garbage" id="nextGarbageCard" type="button"><span class="summary-icon">🗑️</span><span><b>次のごみ</b><small id="nextGarbageText">地域を確認中…</small></span></button>
-      <button class="summary-card summary-weather" id="weatherSummaryCard" type="button"><span class="summary-icon" id="todayWeatherIcon">☁️</span><span><b>今日の天気</b><small id="todayWeatherText">読み込み中…</small></span></button>
-      <button class="summary-card summary-line" id="lineStatusCard" type="button"><span class="summary-icon">💬</span><span><b>LINE通知</b><small id="lineStatusText">連携状態を確認中…</small></span></button>
+      <button class="summary-card summary-event" id="nextEventCard" type="button"><span class="summary-icon">📅</span><span><b>次の予定</b><small id="nextEventText" aria-live="polite">読み込み中…</small></span><span class="summary-arrow" aria-hidden="true">›</span></button>
+      <button class="summary-card summary-weather" id="weatherSummaryCard" type="button"><span class="summary-icon" id="todayWeatherIcon">☁️</span><span><b>今日の天気</b><small id="todayWeatherText" aria-live="polite">読み込み中…</small></span><span class="summary-arrow" aria-hidden="true">›</span></button>
+      <button class="summary-card summary-garbage" id="nextGarbageCard" type="button"><span class="summary-icon">🗑️</span><span><b>次のごみ</b><small id="nextGarbageText" aria-live="polite">地域を確認中…</small></span><span class="summary-arrow" aria-hidden="true">›</span></button>
+      <button class="summary-card summary-line" id="lineStatusCard" type="button"><span class="summary-icon">💬</span><span><b>LINE通知</b><small id="lineStatusText" aria-live="polite">連携状態を確認中…</small></span><span class="summary-arrow" aria-hidden="true">›</span></button>
     </div>
 
     <section id="setupGuide" class="setup-guide" hidden>
@@ -197,7 +219,7 @@
   </section>
   </section>
 
-  <section id="weatherSection" class="app-section app-tab-panel weather-page" data-tab-panel="weather" hidden>
+  <section id="weatherSection" class="app-section app-tab-panel weather-page" data-tab-panel="weather" aria-busy="false" hidden>
     <div class="tab-page-heading weather-page-heading">
       <div><p id="weatherLocationLabel">選択地域の天気</p><h1>天気の詳細</h1></div>
       <button type="button" id="weatherRefreshBtn" class="weather-refresh-btn">↻ 更新</button>
@@ -209,14 +231,14 @@
     </section>
 
     <section id="heatAlertCard" class="weather-alert-card alert-safe">
-      <span class="weather-alert-icon">🌡️</span><div><small>熱中症の注意目安（推定）</small><h2 id="heatAlertLevel">確認中</h2><p id="heatAlertText">気象データを確認しています</p></div>
+      <span class="weather-alert-icon">🌡️</span><div><small>暑さへの注意目安（推定）</small><h2 id="heatAlertLevel">確認中</h2><p id="heatAlertText">気象データを確認しています</p></div>
       <a href="https://www.wbgt.env.go.jp/" target="_blank" rel="noopener">環境省の公式情報</a>
     </section>
 
     <section class="weather-metric-grid" aria-label="天気の詳しい数値">
       <article><span>☔</span><small>降水確率</small><b id="weatherRainChance">--%</b><em id="weatherRainAmount">降水量 --mm</em></article>
       <article><span>💧</span><small>湿度</small><b id="weatherHumidity">--%</b><em>現在</em></article>
-      <article><span>💨</span><small>風速</small><b id="weatherWind">--km/h</b><em id="weatherWindDetail">風向 --</em></article>
+      <article><span>💨</span><small>風速</small><b id="weatherWind">--m/s</b><em id="weatherWindDetail">約--km/h・風向--</em><em id="weatherWindGuide" class="weather-value-guide">強さの目安を確認中</em></article>
       <article><span>🧭</span><small>気圧</small><b id="weatherPressure">--hPa</b><em>地表気圧</em></article>
       <article><span>☀️</span><small>日差し・UV</small><b id="weatherUv">--</b><em id="weatherUvLabel">確認中</em></article>
       <article><span>🌲</span><small>花粉</small><b id="weatherPollen">--</b><em id="weatherPollenDetail">主要花粉の参考値</em></article>
@@ -247,8 +269,8 @@
 <button type="button" id="quickAddEvent" class="quick-add-event" aria-label="今日の予定を追加" hidden>＋</button>
 
 <nav class="bottom-nav" aria-label="メインメニュー">
-  <button type="button" class="bottom-nav-item active" data-target="todaySection" data-tab="home"><span>⌂</span><small>ホーム</small></button>
-  <button type="button" class="bottom-nav-item" data-target="calendarSection" data-tab="calendar"><span>▣</span><small>予定</small></button>
+  <button type="button" class="bottom-nav-item active" data-target="todaySection" data-tab="home" aria-current="page"><span>🏠</span><small>ホーム</small></button>
+  <button type="button" class="bottom-nav-item" data-target="calendarSection" data-tab="calendar"><span>📅</span><small>予定</small></button>
   <button type="button" class="bottom-nav-item" data-target="weatherSection" data-tab="weather"><span>☀️</span><small>天気</small></button>
   <button type="button" class="bottom-nav-item" id="bottomGarbage"><span>♻️</span><small>ごみ</small></button>
   <button type="button" class="bottom-nav-item" id="bottomSettings"><span>⚙️</span><small>設定</small></button>

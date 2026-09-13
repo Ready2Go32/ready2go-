@@ -46,8 +46,20 @@ const Dashboard = (() => {
     const linked = !!Storage.getLineIdToken();
     document.getElementById("lineStatusText").textContent = linked ? "LINE連携済み" : "連携ページからログインしてください";
     const badge = document.getElementById("connectionBadge");
-    badge.textContent = navigator.onLine ? (linked ? "同期可能" : "オンライン") : "オフライン保存中";
-    badge.className = `status-chip ${navigator.onLine ? "status-ok" : "status-warn"}`;
+    const syncPending = localStorage.getItem("pendingServerSync") === "1";
+    if (!navigator.onLine) {
+      badge.textContent = "オフライン・端末保存";
+      badge.className = "status-chip status-warn";
+    } else if (!linked) {
+      badge.textContent = "LINE未連携";
+      badge.className = "status-chip status-neutral";
+    } else if (syncPending) {
+      badge.textContent = "同期待ち";
+      badge.className = "status-chip status-warn";
+    } else {
+      badge.textContent = "同期済み";
+      badge.className = "status-chip status-ok";
+    }
   }
 
   function init() {

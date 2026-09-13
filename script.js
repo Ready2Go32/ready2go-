@@ -6,6 +6,20 @@
     await new Promise(r => document.addEventListener("DOMContentLoaded", r));
   }
 
+  let authNoticeShown = false;
+  window.addEventListener("ready2go:authrequired", () => {
+    const status = document.getElementById("authStatus");
+    if (status) {
+      status.textContent = "LINEログインの期限が切れました。ログインし直してください";
+      status.classList.remove("connected");
+      status.classList.add("required");
+    }
+    if (!authNoticeShown) {
+      authNoticeShown = true;
+      Ready2GoFeatures?.toast?.("LINEログインの更新が必要です");
+    }
+  });
+
   // IndexedDB を開く（エラーでも続行）
   try { await Storage.open(); } catch(e) { console.warn("Storage open failed:", e); }
 
@@ -88,21 +102,28 @@
 
   // ── 設定パネルを初期化 ─────────────────────────────────
   Settings.init();
-  if (new URLSearchParams(location.search).get("open") === "settings") Settings.togglePanel();
 
   document.querySelectorAll(".view-btn").forEach(btn => btn.addEventListener("click", () => Calendar.setView(btn.dataset.view)));
   document.querySelectorAll(".view-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.view === (localStorage.getItem("calendarView") || "month")));
 
   let currentTab = "todaySection";
+  function updateBottomNavigation(settingsOpen = false) {
+    document.querySelectorAll(".bottom-nav-item").forEach(button => {
+      const active = settingsOpen ? button.id === "bottomSettings" : button.dataset.target === currentTab;
+      button.classList.toggle("active", active);
+      if (active) button.setAttribute("aria-current", "page");
+      else button.removeAttribute("aria-current");
+    });
+  }
   function showTab(targetId, smooth = true) {
     const target = document.getElementById(targetId);
     if (!target?.classList.contains("app-tab-panel")) return;
     currentTab = targetId;
     document.querySelectorAll(".app-tab-panel").forEach(panel => { panel.hidden = panel.id !== targetId; });
-    document.querySelectorAll(".bottom-nav-item").forEach(button => button.classList.toggle("active", button.dataset.target === targetId));
+    updateBottomNavigation(false);
     const addButton = document.getElementById("quickAddEvent");
     if (addButton) addButton.hidden = targetId !== "calendarSection";
-    document.getElementById("settings")?.classList.remove("open");
+    Settings.closePanel();
     if (targetId === "calendarSection") Calendar.draw();
     if (targetId === "weatherSection") Weather.renderDetails();
     localStorage.setItem("ready2goCurrentTab", targetId);
@@ -116,13 +137,17 @@
     e.preventDefault();
     e.stopPropagation();
     Settings.togglePanel();
-    const isOpen = document.getElementById("settings")?.classList.contains("open");
-    document.querySelectorAll(".bottom-nav-item").forEach(button => button.classList.toggle("active", isOpen ? button.id === "bottomSettings" : button.dataset.target === currentTab));
   });
+  window.addEventListener("ready2go:settingschange", event => updateBottomNavigation(!!event.detail?.open));
   document.getElementById("weatherRefreshBtn")?.addEventListener("click", async event => {
     const button = event.currentTarget; button.disabled = true; button.textContent = "更新中…";
+    document.getElementById("weatherSection")?.setAttribute("aria-busy", "true");
     try { await Weather.load(); await Dashboard.refresh(); }
-    finally { button.disabled = false; button.textContent = "↻ 更新"; }
+    finally {
+      button.disabled = false;
+      button.textContent = "↻ 更新";
+      document.getElementById("weatherSection")?.setAttribute("aria-busy", "false");
+    }
   });
   document.getElementById("todayBtn")?.addEventListener("click", () => Calendar.goToday());
   document.getElementById("quickAddEvent")?.addEventListener("click", () => Calendar.openModal(Calendar.keyFromDate(new Date())));
@@ -170,30 +195,11 @@
     Settings.togglePanel();
   });
 
-  // ── 通知許可（一度聞いたら次からは出さない） ───────────
-  if ("Notification" in window && Notification.permission === "default") {
-    if (!localStorage.getItem("notifAsked")) {
-      Notification.requestPermission().then(() => {
-        localStorage.setItem("notifAsked", "1");
-      });
-    }
-  }
   setInterval(() => Calendar.checkNotifications(), 60_000);
 
   // ── パネル外クリックで閉じる ───────────────────────────
   document.addEventListener("click", e => {
-    const settings  = document.getElementById("settings");
-    const trigger   = document.getElementById("menuTrigger");
-    const bottomSettings = document.getElementById("bottomSettings");
     const wdPanel   = document.getElementById("weatherDetailPanel");
-
-    if (settings?.classList.contains("open")
-        && !settings.contains(e.target)
-        && !trigger?.contains(e.target)
-        && !bottomSettings?.contains(e.target)) {
-      settings.classList.remove("open");
-      document.querySelectorAll(".bottom-nav-item").forEach(button => button.classList.toggle("active", button.dataset.target === currentTab));
-    }
     if (wdPanel?.classList.contains("open") && !wdPanel.contains(e.target)) {
       wdPanel.classList.remove("open");
     }
@@ -207,7 +213,13 @@
   const openTarget = new URLSearchParams(location.search).get("open");
   if (openTarget === "calendar") showTab("calendarSection", false);
   else if (openTarget === "weather") showTab("weatherSection", false);
-  else showTab("todaySection", false);
+  else {
+    const savedTab = localStorage.getItem("ready2goCurrentTab");
+    showTab(["todaySection", "calendarSection", "weatherSection"].includes(savedTab) ? savedTab : "todaySection", false);
+  }
+  if (openTarget === "settings") {
+    Settings.togglePanel();
+  }
   if (openTarget === "tomorrow") document.getElementById("tomorrowSection")?.scrollIntoView();
 
   async function loadAndDraw() {

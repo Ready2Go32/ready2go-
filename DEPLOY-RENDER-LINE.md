@@ -1,97 +1,129 @@
-# Render・LINE公式アカウント 公開手順
+# Ready2GoをRender・LINEへ公開する手順
 
-この順番で進めます。最初はテスト用のLINE公式アカウントで確認するのがおすすめです。
+このZIPは、コードをGitHubへ置き、RenderとLINEの値を設定すれば起動できる状態です。秘密情報はZIPに含まれていません。
 
-## 1. GitHubへアップロード
+## 0. 公開前に用意するもの
 
-1. GitHubで空のリポジトリを作成します。
-2. このフォルダの中身をリポジトリ直下へアップロードします。
-3. `.env`、`node_modules`、`data.json` はアップロードしません（`.gitignore`で除外済みです）。
+- GitHubリポジトリ
+- RenderのWeb Serviceと、長期保存できるPostgreSQL
+- 同じLINE Developersプロバイダー内のMessaging APIチャネルとLINE Loginチャネル
+- 公開者名と問い合わせ用メールアドレス
 
-ZIPそのものではなく、ZIPを展開した中身をアップロードしてください。
+LINEのチャネルシークレット、アクセストークン、データベースURLは、GitHub・チャット・スクリーンショットへ載せないでください。
 
-## 2. LINE Developersで2つのチャネルを作成
+## 1. GitHubへ置く
 
-1. LINE Developersコンソールでプロバイダーを作成します。
-2. 同じプロバイダー内にMessaging APIチャネル（LINE公式アカウント）を作成します。
-3. 同じプロバイダー内にLINE Loginチャネルを作成します。
+1. ZIPを展開します。
+2. 展開したフォルダの中身を、GitHubリポジトリの直下へ置きます。
+3. `.env`、`node_modules`、`data.json`はアップロードしません。
+4. GitHub Actionsを使う場合は、`npm ci && npm run check`を実行するよう設定します。
 
-同じ利用者を正しく識別するため、Messaging APIとLINE Loginは必ず同じプロバイダーに置きます。
-
-控える値:
-
-- Messaging APIの `Channel secret`
-- Messaging APIの長期 `Channel access token`
-- LINE Loginの `Channel ID`
-
-これらは公開しないでください。
-
-## 3. Renderへ最初のデプロイ
+## 2. RenderでBlueprintを作る
 
 1. Renderで「New」→「Blueprint」を選び、GitHubリポジトリを接続します。
-2. `render.yaml` が読み込まれたことを確認します。
-3. 環境変数を次のように入力します。
+2. リポジトリ直下の`render.yaml`を読み込ませます。
+3. PostgreSQLから発行された接続URLを`DATABASE_URL`へ入れます。
+4. 次の環境変数を設定します。
 
-| キー | 入れる値 |
-|---|---|
-| `APP_URL` | 最初は空でも可。公開URL決定後に設定 |
-| `LIFF_ID` | 最初は空で可 |
-| `LINE_CHANNEL_SECRET` | Messaging APIのChannel secret |
-| `LINE_CHANNEL_ACCESS_TOKEN` | Messaging APIの長期Channel access token |
-| `LINE_LOGIN_CHANNEL_ID` | LINE LoginのChannel ID |
-| `ANTHROPIC_API_KEY` | ごみ検索を使う場合のみ設定 |
+`render.yaml`は、意図しない料金が発生しないよう最初は`plan: free`で作成します。初期テスト後、定時通知を本番運用するときだけ、内容と料金を確認して常時稼働プランへ手動で変更してください。
 
-4. デプロイを実行し、`https://○○.onrender.com/health` が `{"ok":true,...}` を返すことを確認します。
-5. Renderの公開URLを `APP_URL` に設定します。末尾に `/` は付けません。
+| キー | 値 | 必須 |
+|---|---|---|
+| `DATABASE_URL` | PostgreSQL接続URL | 公開時は必須 |
+| `DATABASE_SSL` | 通常は`true` | 必須 |
+| `APP_URL` | `https://○○.onrender.com`（末尾`/`なし） | 必須 |
+| `LINE_CHANNEL_SECRET` | Messaging APIのChannel secret | 必須 |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Messaging APIの長期Channel access token | 必須 |
+| `LINE_LOGIN_CHANNEL_ID` | LINE LoginのChannel ID | 必須 |
+| `LIFF_ID` | LIFFアプリ作成後のID | 必須 |
+| `OPERATOR_NAME` | プライバシーポリシーに出す公開者名 | 必須 |
+| `CONTACT_EMAIL` | 問い合わせ用メール | 必須 |
+| `TEST_MODE` | 招待制なら`true`、一般公開なら`false` | 必須 |
+| `TEST_INVITE_CODE` | 招待制のときだけ設定 | 条件付き |
+| `ANTHROPIC_API_KEY` | 未登録地域のごみ検索を使う場合だけ | 任意 |
 
-`render.yaml` は予定データ保持用に `/var/data` の永続ディスクを設定しています。永続ディスクを使えるRenderプランが必要です。ディスクを付けない場合、再デプロイでサーバー側データが消える可能性があります。
+最初のデプロイでURLが確定していない場合は、先にWeb Serviceを作り、公開URLが出た後で`APP_URL`を設定して再デプロイします。
 
-## 4. LIFFアプリを作成
+## 3. サーバー状態を確認する
 
-LINE LoginチャネルのLIFF設定で追加します。
+ブラウザで次を開きます。
 
-- Endpoint URL: `https://○○.onrender.com/liff-init.html`
-- Size: `Full`
-- Scope: `openid` と `profile`
+```text
+https://○○.onrender.com/health
+```
 
-作成後のLIFF IDをRenderの `LIFF_ID` に設定し、再デプロイします。アプリを開くURLは `https://liff.line.me/LIFF_ID` です。
+公開準備が完了していれば、次が表示されます。
 
-## 5. Messaging APIのWebhook設定
+```json
+{
+  "ok": true,
+  "ready": true,
+  "version": "1.0.0",
+  "storage": "postgresql",
+  "databaseConfigured": true,
+  "missingEnvironment": []
+}
+```
 
-Messaging API設定で次を行います。
+`ready:false`なら、`missingEnvironment`に出た環境変数をRenderへ追加します。`storage:file`のまま公開すると、再起動や再デプロイでデータが消える可能性があります。
 
-1. Webhook URLに `https://○○.onrender.com/webhook` を設定します。
+## 4. LINE LoginとLIFFを設定する
+
+1. LINE DevelopersでLINE Loginチャネルを開きます。
+2. LIFFタブでアプリを追加します。
+3. Endpoint URLを`https://○○.onrender.com/liff-init.html`にします。
+4. Sizeは`Full`、Scopeは少なくとも`openid`を有効にします。`profile`も選択できます。
+5. 発行されたLIFF IDをRenderの`LIFF_ID`へ入れて再デプロイします。
+6. 友達など開発者以外にも使ってもらう前に、LINE Loginチャネルを「Published（公開済み）」へ変更します。開発中のままだと開発者権限のない人はログインできません。
+
+アプリを開くURLは次です。
+
+```text
+https://liff.line.me/LIFF_ID
+```
+
+## 5. Messaging APIのWebhookを設定する
+
+1. Messaging API設定でWebhook URLを`https://○○.onrender.com/webhook`にします。
 2. 「検証」を押して成功を確認します。
 3. 「Webhookの利用」をオンにします。
-4. 応答メッセージが二重になる場合は、LINE公式アカウント側の標準応答をオフにします。
+4. LINE公式アカウント側の標準応答とReady2Goの応答が重なる場合は、標準応答をオフにします。
+5. LINE Official Account Managerのリッチメニューから、上のLIFF URLを開くよう設定します。
 
-## 6. リッチメニューから開く
+## 6. 通知を確実に動かすための重要事項
 
-LINE Official Account Managerでリッチメニューを作ります。
+Ready2Goの通知処理はWeb Service内で1分ごとに動きます。RenderのFree Web Serviceは受信アクセスが15分ないと停止するため、停止中は予定時刻の通知を送れません。通知を本番運用する場合は、Web Serviceを常時稼働する有料インスタンスに変更してください。
 
-1. メニュー画像とタップ領域を設定します。
-2. アクションは「リンク」を選びます。
-3. URLに `https://liff.line.me/LIFF_ID` を入れます。
-4. リッチメニューを公開します。
+PostgreSQLはWeb Serviceとは別に必ず設定します。無料PostgreSQLを使う場合は有効期限とバックアップ条件を確認し、長期運用前に永続プランへ移行してください。
 
-友だち追加したテスト利用者で、メニュー→同意画面→予定登録→LINEテスト通知の順に確認します。
+## 7. 招待テストから一般公開へ
 
-## 7. 公開前チェック
+最初は次を推奨します。
 
-- LINEログインできる
-- 予定を登録し、再読み込み後も残る
-- 都道府県・市区町村・地区を設定できる
-- LINEテスト通知が届く
-- 通知時刻・一時停止・前日通知が動く
-- プライバシーポリシーと利用規約の公開者情報を実運用に合わせた
-- 自治体公式ページへのリンクと注意表示を確認した
-- Renderログに秘密情報を自分で出力していない
+```text
+TEST_MODE=true
+TEST_INVITE_CODE=他人が推測しにくい長めの文字列
+```
 
-## よくある原因
+動作確認後、一般公開する場合は`TEST_MODE=false`へ変更します。変更後もLINE LoginチャネルがPublishedになっていることを確認します。
 
-- `Invalid signature`: Channel secretがMessaging APIチャネルと一致していません。
-- LINEログイン後に401: `LINE_LOGIN_CHANNEL_ID`またはLIFFの所属チャネルが違います。
-- LIFF初期化エラー: `LIFF_ID`未設定、またはEndpoint URLが違います。
-- 通知が届かない: 友だち追加、アクセストークン、通知設定、一時停止期限を確認します。
-- 再デプロイで予定が消える: 永続ディスクと`DATA_DIR=/var/data`を確認します。
+## 8. 公開前の実機チェック
 
+- [ ] `/health`が`ready:true`かつ`storage:postgresql`
+- [ ] LINE LoginチャネルがPublished
+- [ ] 自分以外のテスターがLIFF URLから開ける
+- [ ] ホーム・予定・天気・ごみ・設定の5タブを移動できる
+- [ ] 予定を登録し、再読み込み後も残る
+- [ ] 忠生1丁目のごみ予定と対応期間（2027年9月まで）が表示される
+- [ ] LINEテスト通知が届く
+- [ ] 通知時刻、一時停止、前日通知を確認した
+- [ ] バックアップを保存し、テスト用データで復元できる
+- [ ] プライバシーポリシーの公開者名・問い合わせ先が正しい
+- [ ] Renderログへ秘密情報が出ていない
+- [ ] Freeではなく常時稼働するインスタンスを通知本番用に選んだ
+
+## 公式資料
+
+- [Renderのデプロイ](https://render.com/docs/deploys)
+- [Render Free Web Serviceの制限](https://render.com/docs/free)
+- [LINE LIFFアプリの追加](https://developers.line.biz/en/docs/liff/registering-liff-apps/)

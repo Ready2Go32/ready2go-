@@ -2,6 +2,7 @@ services:
   - type: web
     name: ready2go
     runtime: node
+    plan: free
     buildCommand: npm ci
     startCommand: npm start
     healthCheckPath: /health
@@ -13,6 +14,10 @@ services:
       - key: DATABASE_SSL
         value: true
       - key: APP_URL
+        sync: false
+      - key: OPERATOR_NAME
+        sync: false
+      - key: CONTACT_EMAIL
         sync: false
       - key: LIFF_ID
         sync: false

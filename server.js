@@ -11,9 +11,17 @@ const line       = require("@line/bot-sdk");
 const cron       = require("node-cron");
 const fetch      = require("node-fetch");
 const crypto     = require("crypto");
+const path       = require("path");
 const { loadData, saveData, getStorageMode } = require("./database");
 
 const app = express();
+const APP_VERSION = "1.1.0";
+const REQUIRED_PRODUCTION_ENV = [
+  "DATABASE_URL", "LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "LINE_LOGIN_CHANNEL_ID", "LIFF_ID", "APP_URL",
+  "OPERATOR_NAME", "CONTACT_EMAIL"
+];
+
+app.set("trust proxy", 1);
 
 // ── LINE SDK設定 ──────────────────────────────────────────
 const lineConfig = {
@@ -30,7 +38,11 @@ let store = { users: {}, events: {}, garbageSchedules: {}, notificationLogs: {},
 // ── ミドルウェア ─────────────────────────────────────────
 // LINE WebhookはJSONミドルウェアより先に処理する。
 // LINE SDKが署名検証のため本文を読み取るので、express.json()を重ねない。
-app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
+const webhookMiddleware = lineConfig.channelSecret
+  ? line.middleware(lineConfig)
+  : (req, res) => res.status(503).json({ error: "LINE_CHANNEL_SECRET が設定されていません" });
+
+app.post("/webhook", webhookMiddleware, async (req, res) => {
   res.sendStatus(200); // LINEには即座に200を返す
 
   const events = req.body.events || [];
@@ -38,17 +50,21 @@ app.post("/webhook", line.middleware(lineConfig), async (req, res) => {
     const userId = event.source?.userId;
     if (!userId) continue;
 
-    if (event.type === "follow") {
-      await handleFollow(userId);
-    }
+    try {
+      if (event.type === "follow") {
+        await handleFollow(userId);
+      }
 
-    if (event.type === "message" && event.message.type === "text") {
-      await handleMessage(userId, event.message.text, event.replyToken);
+      if (event.type === "message" && event.message.type === "text") {
+        await handleMessage(userId, event.message.text, event.replyToken);
+      }
+    } catch (error) {
+      console.error(`Webhook処理失敗 (${event.type || "unknown"}):`, error.message);
     }
   }
 });
 
-app.use(express.json());
+app.use(express.json({ limit: "800kb" }));
 
 // CORS（同一URLで公開する構成。APP_URL以外の外部サイトには許可しない）
 app.use((req, res, next) => {
@@ -65,8 +81,48 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   res.header("X-Content-Type-Options", "nosniff");
   res.header("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.header("X-Frame-Options", "DENY");
+  res.header("Permissions-Policy", "geolocation=(self), camera=(), microphone=()");
+  res.header("Content-Security-Policy", [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://static.line-scdn.net",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "connect-src 'self' https://*.line.me https://*.line-scdn.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://geocoding-api.open-meteo.com https://nominatim.openstreetmap.org",
+    "frame-src https://*.line.me",
+    "font-src 'self' data:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'"
+  ].join("; "));
   next();
 });
+
+function createRateLimit({ windowMs, max, message }) {
+  const buckets = new Map();
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = req.ip || req.socket.remoteAddress || "unknown";
+    const current = buckets.get(key);
+    if (!current || current.resetAt <= now) {
+      buckets.set(key, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+    current.count += 1;
+    if (current.count > max) {
+      res.set("Retry-After", String(Math.max(1, Math.ceil((current.resetAt - now) / 1000))));
+      res.status(429).json({ error: message || "短時間の操作が多すぎます。少し待ってから再度お試しください" });
+      return;
+    }
+    next();
+  };
+}
+
+const apiRateLimit = createRateLimit({ windowMs: 60_000, max: 180 });
+const inviteRateLimit = createRateLimit({ windowMs: 10 * 60_000, max: 20, message: "招待コードの確認回数が多すぎます。10分ほど待ってください" });
+app.use("/api", apiRateLimit);
 
 // ブラウザへ公開してよい設定だけを環境変数から配信する。
 app.get("/app-config.js", (req, res) => {
@@ -75,9 +131,29 @@ app.get("/app-config.js", (req, res) => {
   res.send(`window.APP_CONFIG=${JSON.stringify({
     serverUrl: process.env.APP_URL || `${req.protocol}://${req.get("host")}`,
     liffId: process.env.LIFF_ID || "",
+    version: APP_VERSION,
+    operatorName: process.env.OPERATOR_NAME || "Ready2Go運営者",
+    contactEmail: process.env.CONTACT_EMAIL || "",
   })};`);
 });
-app.use(express.static(__dirname));
+
+// 必要な画面ファイルだけを公開する。data.json・server.js・設定資料などは配信しない。
+const PUBLIC_FILES = new Set([
+  "index.html", "garbage-calendar.html", "liff-init.html", "privacy.html", "terms.html",
+  "style.css", "storage.js", "weather.js", "garbage.js", "municipal-garbage-data.js",
+  "settings.js", "calendar.js", "dashboard.js", "features.js", "script.js",
+  "service-worker.js", "manifest.json", "app-icon.svg", "icon-192.png", "icon-512.png"
+]);
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  const fileName = req.path.startsWith("/") ? req.path.slice(1) : req.path;
+  if (!PUBLIC_FILES.has(fileName)) return next();
+  res.set("Cache-Control", fileName === "service-worker.js" || fileName.endsWith(".html")
+    ? "no-cache"
+    : "public, max-age=3600");
+  return res.sendFile(path.join(__dirname, fileName));
+});
 
 // 友だち追加時の処理
 async function handleFollow(userId) {
@@ -87,7 +163,7 @@ async function handleFollow(userId) {
       registeredAt: new Date().toISOString(),
       notifyEnabled: true,
     };
-    saveData(store);
+    await saveData(store);
     console.log(`新規ユーザー登録: ${userId}`);
   }
 
@@ -96,7 +172,7 @@ async function handleFollow(userId) {
     to: userId,
     messages: [{
       type: "text",
-      text: `📘 Ready2Goへようこそ！\n\nあなたのLINEアカウントと連携しました。\n毎朝7時に今日の予定と天気をお知らせします。\n\n「通知オフ」と送ると通知を停止できます。`
+      text: `📘 Ready2Goへようこそ！\n\nあなたのLINEアカウントと連携しました。\n設定した時刻に予定・天気・ごみ情報をお知らせします。\n\n「通知オフ」と送ると通知を停止できます。`
     }]
   });
 }
@@ -152,11 +228,11 @@ async function handleMessage(userId, text, replyToken) {
   if (trimmed === "通知オフ" || trimmed === "通知OFF") {
     if (store.users[userId]) {
       store.users[userId].notifyEnabled = false;
-      saveData(store);
+      await saveData(store);
     }
     await lineClient.replyMessage({
       replyToken,
-      messages: [{ type: "text", text: "朝の通知をオフにしました。「通知オン」で再度有効にできます。" }]
+      messages: [{ type: "text", text: "Ready2Goの通知をオフにしました。「通知オン」で再度有効にできます。" }]
     });
     return;
   }
@@ -164,11 +240,11 @@ async function handleMessage(userId, text, replyToken) {
   if (trimmed === "通知オン" || trimmed === "通知ON") {
     if (store.users[userId]) {
       store.users[userId].notifyEnabled = true;
-      saveData(store);
+      await saveData(store);
     }
     await lineClient.replyMessage({
       replyToken,
-      messages: [{ type: "text", text: "朝の通知をオンにしました。毎朝7時にお知らせします。" }]
+      messages: [{ type: "text", text: "Ready2Goの通知をオンにしました。アプリで設定した時刻にお知らせします。" }]
     });
     return;
   }
@@ -250,6 +326,75 @@ function publicUserSettings(user = {}) {
     .map(key => [key, JSON.parse(JSON.stringify(user[key]))]));
 }
 
+function cleanGarbageSchedule(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("ごみ収集設定の形式が正しくありません");
+  }
+  const types = Array.isArray(value.garbageTypes) ? value.garbageTypes : [];
+  if (types.length > 40) throw new Error("ごみ収集区分が多すぎます");
+  const safe = {
+    garbageTypes: types.map(item => {
+      const name = String(item?.name || "").trim().slice(0, 60);
+      if (!name) throw new Error("ごみ収集区分の名前が必要です");
+      const days = Array.isArray(item.days) ? item.days.slice(0, 20).map(rule => ({
+        dow: Math.min(6, Math.max(0, Number(rule?.dow) || 0)),
+        week: rule?.week == null ? null : Math.min(5, Math.max(1, Number(rule.week) || 1))
+      })) : [];
+      const dates = Array.isArray(item.dates)
+        ? [...new Set(item.dates.map(String).filter(validDateKey))].slice(0, 1000)
+        : [];
+      return {
+        name,
+        color: /^#[0-9a-f]{6}$/i.test(String(item.color || "")) ? String(item.color) : "#64748b",
+        icon: String(item.icon || "🗑️").slice(0, 12),
+        schedule: String(item.schedule || "").slice(0, 160),
+        days,
+        dates
+      };
+    }),
+    note: String(value.note || "").slice(0, 500),
+    sourceUrl: /^https:\/\//i.test(String(value.sourceUrl || "")) ? String(value.sourceUrl).slice(0, 500) : "",
+    checkedAt: String(value.checkedAt || "").slice(0, 40),
+    validFrom: validDateKey(String(value.validFrom || "")) ? String(value.validFrom) : "",
+    validUntil: validDateKey(String(value.validUntil || "")) ? String(value.validUntil) : ""
+  };
+  for (const key of ["_verifiedOfficial", "_manual", "_municipalRegistered"]) {
+    if (value[key] !== undefined) safe[key] = value[key] === true;
+  }
+  return safe;
+}
+
+function cleanUserSettings(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  const safe = {};
+  const boolKeys = ["notifyEnabled", "garbageReminder", "eventReminderEnabled"];
+  for (const key of boolKeys) if (input[key] !== undefined) safe[key] = input[key] !== false;
+  const timeList = value => Array.isArray(value)
+    ? [...new Set(value.map(String).filter(time => /^([01]\d|2[0-3]):[0-5]\d$/.test(time)))].slice(0, 8).sort()
+    : [];
+  if (input.todayNotifyTimes !== undefined) safe.todayNotifyTimes = timeList(input.todayNotifyTimes);
+  if (input.previousNotifyTimes !== undefined) safe.previousNotifyTimes = timeList(input.previousNotifyTimes);
+  if (input.pauseUntil !== undefined) {
+    const value = String(input.pauseUntil || "");
+    safe.pauseUntil = value === "" || validDateKey(value) ? value : "";
+  }
+  if (input.garbageReminderTime !== undefined) {
+    const value = String(input.garbageReminderTime || "");
+    safe.garbageReminderTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : "20:00";
+  }
+  if (input.pref !== undefined) safe.pref = String(input.pref || "").trim().slice(0, 10);
+  if (input.region !== undefined) safe.region = String(input.region || "").trim().slice(0, 30);
+  if (input.area !== undefined) safe.area = String(input.area || "").trim().slice(0, 50);
+  if (input.locationMode !== undefined) safe.locationMode = input.locationMode === "gps" ? "gps" : "address";
+  for (const [key, min, max] of [["gpsLat", -90, 90], ["gpsLon", -180, 180]]) {
+    if (input[key] === undefined || input[key] === "" || input[key] == null) continue;
+    const value = Number(input[key]);
+    if (Number.isFinite(value) && value >= min && value <= max) safe[key] = value;
+  }
+  if (input.garbageSchedule !== undefined) safe.garbageSchedule = cleanGarbageSchedule(input.garbageSchedule);
+  return safe;
+}
+
 function cleanEvent(event) {
   if (!event || typeof event !== "object" || Array.isArray(event)) {
     throw new Error("予定の形式が正しくありません");
@@ -288,10 +433,16 @@ function getBearerToken(req) {
   return value.startsWith("Bearer ") ? value.slice(7) : null;
 }
 
+const verifiedLineTokens = new Map();
+
 async function verifyLineIdToken(idToken) {
   if (!process.env.LINE_LOGIN_CHANNEL_ID) {
     throw new Error("LINE_LOGIN_CHANNEL_ID が設定されていません");
   }
+  const cacheKey = crypto.createHash("sha256").update(idToken).digest("hex");
+  const cached = verifiedLineTokens.get(cacheKey);
+  if (cached?.validUntil > Date.now()) return cached.payload;
+
   const body = new URLSearchParams({
     id_token: idToken,
     client_id: process.env.LINE_LOGIN_CHANNEL_ID,
@@ -305,6 +456,14 @@ async function verifyLineIdToken(idToken) {
   const payload = await response.json();
   if (!payload.sub || String(payload.aud) !== String(process.env.LINE_LOGIN_CHANNEL_ID)) {
     throw new Error("LINE IDトークンの対象が一致しません");
+  }
+  const tokenExpiresAt = Number(payload.exp || 0) * 1000;
+  const validUntil = Math.min(tokenExpiresAt || Date.now() + 300_000, Date.now() + 300_000);
+  verifiedLineTokens.set(cacheKey, { payload, validUntil });
+  if (verifiedLineTokens.size > 500) {
+    for (const [key, value] of verifiedLineTokens) {
+      if (value.validUntil <= Date.now() || verifiedLineTokens.size > 400) verifiedLineTokens.delete(key);
+    }
   }
   return payload;
 }
@@ -352,7 +511,7 @@ app.get("/api/test/access", requireUserAuth, (req, res) => {
   res.json({ required: process.env.TEST_MODE === "true", allowed: process.env.TEST_MODE !== "true" || store.users[req.userId].testAccess === true });
 });
 
-app.post("/api/test/join", requireUserAuth, async (req, res) => {
+app.post("/api/test/join", inviteRateLimit, requireUserAuth, async (req, res) => {
   const expected = String(process.env.TEST_INVITE_CODE || "").trim();
   const actual = String(req.body?.inviteCode || "").trim();
   if (!expected || actual !== expected) return res.status(400).json({ error: "招待コードが正しくありません" });
@@ -424,7 +583,7 @@ app.post("/api/groups", requireUserAuth, async (req, res) => {
   res.json(publicGroup(group, req.userId));
 });
 
-app.post("/api/groups/join", requireUserAuth, async (req, res) => {
+app.post("/api/groups/join", inviteRateLimit, requireUserAuth, async (req, res) => {
   const code = String(req.body?.inviteCode || "").trim().toUpperCase();
   const group = Object.values(store.groups || {}).find(entry => entry.inviteCode === code);
   if (!group) return res.status(404).json({ error: "招待コードが見つかりません" });
@@ -436,6 +595,11 @@ app.post("/api/groups/join", requireUserAuth, async (req, res) => {
 app.get("/api/group-events-range", requireUserAuth, (req, res) => {
   const start = String(req.query.start || ""), end = String(req.query.end || "");
   if (!validDateKey(start) || !validDateKey(end)) return res.status(400).json({ error: "期間が正しくありません" });
+  const startDate = new Date(`${start}T00:00:00Z`), endDate = new Date(`${end}T00:00:00Z`);
+  const days = Math.floor((endDate - startDate) / 86400000) + 1;
+  if (!Number.isFinite(days) || days < 1 || days > 62) {
+    return res.status(400).json({ error: "取得期間は62日以内にしてください" });
+  }
   const result = {};
   for (const group of Object.values(store.groups || {})) {
     if (!group.members?.includes(req.userId)) continue;
@@ -448,6 +612,26 @@ app.get("/api/group-events-range", requireUserAuth, (req, res) => {
   res.json(result);
 });
 
+app.delete("/api/groups/:groupId/membership", requireUserAuth, async (req, res) => {
+  const group = groupForUser(req.params.groupId, req.userId);
+  if (!group) return res.status(404).json({ error: "グループが見つかりません" });
+  if (group.ownerId === req.userId) {
+    return res.status(400).json({ error: "管理者は退出できません。グループを削除してください" });
+  }
+  group.members = group.members.filter(userId => userId !== req.userId);
+  await saveData(store);
+  res.json({ ok: true });
+});
+
+app.delete("/api/groups/:groupId", requireUserAuth, async (req, res) => {
+  const group = groupForUser(req.params.groupId, req.userId);
+  if (!group) return res.status(404).json({ error: "グループが見つかりません" });
+  if (group.ownerId !== req.userId) return res.status(403).json({ error: "管理者だけが削除できます" });
+  delete store.groups[req.params.groupId];
+  await saveData(store);
+  res.json({ ok: true });
+});
+
 app.post("/api/groups/:groupId/events/:dateKey", requireUserAuth, async (req, res) => {
   const group = groupForUser(req.params.groupId, req.userId);
   if (!group) return res.status(404).json({ error: "グループが見つかりません" });
@@ -456,6 +640,9 @@ app.post("/api/groups/:groupId/events/:dateKey", requireUserAuth, async (req, re
     const event = cleanEvent(req.body);
     event.id = crypto.randomUUID(); event.createdBy = req.userId;
     group.events ||= {}; group.events[req.params.dateKey] ||= [];
+    if (group.events[req.params.dateKey].length >= 200) {
+      return res.status(400).json({ error: "1日に保存できる共有予定は200件までです" });
+    }
     group.events[req.params.dateKey].push(event);
     await saveData(store);
     res.json({ ok: true, id: event.id });
@@ -573,17 +760,12 @@ app.get("/api/user-settings", requireUserAuth, (req, res) => {
 });
 
 app.post("/api/user-settings", requireUserAuth, async (req, res) => {
-  const input = req.body && typeof req.body === "object" ? req.body : {};
-  for (const key of USER_SETTING_KEYS) {
-    if (input[key] !== undefined) {
-      store.users[req.userId][key] = JSON.parse(JSON.stringify(input[key]));
-    }
-  }
   try {
+    Object.assign(store.users[req.userId], cleanUserSettings(req.body));
     await saveData(store);
     res.json({ ok: true });
   } catch (error) {
-    res.status(503).json({ error: "設定をデータベースへ保存できませんでした" });
+    res.status(400).json({ error: error.message || "設定を保存できませんでした" });
   }
 });
 
@@ -611,12 +793,7 @@ function sanitizeBackupEvents(value) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || !Array.isArray(list) || list.length > 200) {
       throw new Error("予定データの内容が正しくありません");
     }
-    result[dateKey] = list.map(event => {
-      if (!event || typeof event !== "object" || typeof event.title !== "string") {
-        throw new Error("予定データの内容が正しくありません");
-      }
-      return JSON.parse(JSON.stringify(event));
-    });
+    result[dateKey] = cleanEventList(list);
   }
   return result;
 }
@@ -631,26 +808,42 @@ app.get("/api/backup", requireUserAuth, (req, res) => {
   });
 });
 
-app.post("/api/restore", requireUserAuth, (req, res) => {
+app.post("/api/restore", requireUserAuth, async (req, res) => {
   try {
     const backup = req.body;
     if (!backup || backup.app !== "Ready2Go" || Number(backup.version) !== 1) {
       return res.status(400).json({ error: "Ready2Goのバックアップファイルではありません" });
     }
     const restoredEvents = sanitizeBackupEvents(backup.events);
-    const restoredSettings = backup.settings && typeof backup.settings === "object"
-      ? Object.fromEntries(BACKUP_SETTING_KEYS
-        .filter(key => backup.settings[key] !== undefined)
-        .map(key => [key, JSON.parse(JSON.stringify(backup.settings[key]))]))
-      : {};
+    const restoredSettings = cleanUserSettings(backup.settings);
 
     store.events[req.userId] = restoredEvents;
     Object.assign(store.users[req.userId], restoredSettings);
-    saveData(store);
+    await saveData(store);
     res.json({ ok: true, restoredDates: Object.keys(restoredEvents).length });
   } catch (error) {
     res.status(400).json({ error: error.message || "復元できませんでした" });
   }
+});
+
+app.get("/api/account", requireUserAuth, (req, res) => {
+  const eventDays = Object.keys(store.events[req.userId] || {}).length;
+  const groups = Object.values(store.groups || {}).filter(group => group.members?.includes(req.userId)).length;
+  res.json({ registeredAt: store.users[req.userId]?.registeredAt || "", eventDays, groups });
+});
+
+app.delete("/api/account", requireUserAuth, async (req, res) => {
+  if (req.body?.confirm !== "DELETE") return res.status(400).json({ error: "削除確認が一致しません" });
+  delete store.users[req.userId];
+  delete store.events[req.userId];
+  delete store.notificationLogs?.[req.userId];
+  store.feedback = (store.feedback || []).filter(item => item.authorId !== req.userId);
+  for (const [groupId, group] of Object.entries(store.groups || {})) {
+    if (group.ownerId === req.userId) delete store.groups[groupId];
+    else group.members = (group.members || []).filter(userId => userId !== req.userId);
+  }
+  await saveData(store);
+  res.json({ ok: true });
 });
 
 function garbageScheduleKey(pref, region, area = "") {
@@ -747,7 +940,7 @@ dowは0=日〜6=土、weekは毎週ならnull、第1・第3などの場合は数
     store.users[req.userId].pref = pref;
     store.users[req.userId].region = region;
     store.users[req.userId].area = area;
-    saveData(store);
+    await saveData(store);
     res.json(schedule);
   } catch (error) {
     console.error("ごみ情報取得エラー:", error.message);
@@ -793,7 +986,6 @@ app.post("/api/garbage-sort", requireUserAuth, async (req, res) => {
 });
 
 // ── ユーザー別LINE通知 ──────────────────────────────────
-cron.schedule("* * * * *", sendScheduledNotifications, { timezone: "Asia/Tokyo" });
 
 function timeInJapan(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -845,6 +1037,7 @@ async function sendScheduledNotifications() {
   const userIds = Object.keys(store.users);
   for (const userId of userIds) {
     const user = store.users[userId];
+    if (process.env.TEST_MODE === "true" && user.testAccess !== true) continue;
     if (isPaused(user, now.dateKey)) continue;
     try {
       await retryFailedNotification(userId);
@@ -1059,33 +1252,75 @@ function wmoText(code) {
 
 // ── LINE LIFFのリダイレクト ──────────────────────────────
 // LIFF経由でユーザーIDを取得してフロントエンドに渡す
-app.post("/liff-init", requireUserAuth, (req, res) => {
-  saveData(store);
+app.post("/liff-init", requireUserAuth, async (req, res) => {
+  await saveData(store);
   res.json({ ok: true, userId: req.userId });
 });
 
 // ── ヘルスチェック ────────────────────────────────────────
-app.get("/health", (_, res) => res.json({
-  ok: true,
-  users: Object.keys(store.users).length,
-  storage: getStorageMode(),
-  startedAt: SERVER_STARTED_AT,
-  checkedAt: new Date().toISOString(),
-}));
+app.get("/health", (_, res) => {
+  const missingEnvironment = REQUIRED_PRODUCTION_ENV.filter(key => !process.env[key]);
+  if (process.env.TEST_MODE === "true" && !process.env.TEST_INVITE_CODE) {
+    missingEnvironment.push("TEST_INVITE_CODE");
+  }
+  res.json({
+    ok: true,
+    ready: missingEnvironment.length === 0,
+    version: APP_VERSION,
+    storage: getStorageMode(),
+    databaseConfigured: Boolean(process.env.DATABASE_URL),
+    missingEnvironment,
+    scheduler: process.env.DISABLE_SCHEDULER === "true" ? "disabled" : "enabled",
+    startedAt: SERVER_STARTED_AT,
+    checkedAt: new Date().toISOString(),
+  });
+});
+
+app.use((error, req, res, next) => {
+  if (error?.type === "entity.too.large") {
+    return res.status(413).json({ error: "送信データが大きすぎます" });
+  }
+  if (error instanceof SyntaxError && error.status === 400 && "body" in error) {
+    return res.status(400).json({ error: "JSONの形式が正しくありません" });
+  }
+  next(error);
+});
 
 // ── サーバー起動 ─────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 const SERVER_STARTED_AT = new Date().toISOString();
+let schedulerTask = null;
 
-async function startServer() {
+async function startServer(options = {}) {
   store = await loadData();
-  app.listen(PORT, () => {
-    console.log(`Ready2Go サーバー起動 — port ${PORT}`);
-    console.log("ユーザー別通知スケジューラー起動 (Asia/Tokyo)");
+  if (!schedulerTask && process.env.DISABLE_SCHEDULER !== "true" && options.scheduler !== false) {
+    schedulerTask = cron.schedule("* * * * *", sendScheduledNotifications, { timezone: "Asia/Tokyo" });
+  }
+  const port = options.port ?? PORT;
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port, () => {
+      console.log(`Ready2Go サーバー起動 — port ${server.address().port}`);
+      if (schedulerTask) console.log("ユーザー別通知スケジューラー起動 (Asia/Tokyo)");
+      resolve(server);
+    });
+    server.once("error", reject);
   });
 }
 
-startServer().catch(error => {
-  console.error("サーバー起動エラー:", error);
-  process.exit(1);
-});
+if (require.main === module) {
+  startServer().catch(error => {
+    console.error("サーバー起動エラー:", error);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  app,
+  startServer,
+  timeInJapan,
+  cleanEvent,
+  cleanEventList,
+  cleanUserSettings,
+  garbageForDate,
+  parseLineEvent,
+};

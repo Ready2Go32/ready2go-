@@ -8,19 +8,33 @@ const Ready2GoFeatures = (() => {
     document.querySelector(".app-toast")?.remove();
     const el = document.createElement("div");
     el.className = "app-toast"; el.textContent = message;
+    el.setAttribute("role", "status"); el.setAttribute("aria-live", "polite");
     document.body.appendChild(el);
     requestAnimationFrame(() => el.classList.add("show"));
     setTimeout(() => { el.classList.remove("show"); setTimeout(() => el.remove(), 250); }, 2200);
   }
 
   function modal(title, html) {
+    const previousFocus = document.activeElement;
     const overlay = document.createElement("div");
     overlay.className = "modal feature-modal";
-    overlay.innerHTML = `<div class="card feature-modal-card"><div class="card-header"><h3>${title}</h3><button type="button" class="card-close" aria-label="閉じる">✕</button></div><div class="feature-modal-body">${html}</div></div>`;
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "featureModalTitle");
+    overlay.innerHTML = `<div class="card feature-modal-card"><div class="card-header"><h3 id="featureModalTitle">${escapeHtml(title)}</h3><button type="button" class="card-close" aria-label="閉じる">✕</button></div><div class="feature-modal-body">${html}</div></div>`;
     document.body.appendChild(overlay);
-    const close = () => overlay.remove();
+    document.body.classList.add("modal-open");
+    const onKeydown = event => { if (event.key === "Escape") close(); };
+    const close = () => {
+      document.removeEventListener("keydown", onKeydown);
+      overlay.remove();
+      document.body.classList.remove("modal-open");
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+    };
     overlay.querySelector(".card-close").onclick = close;
     overlay.onclick = event => { if (event.target === overlay) close(); };
+    document.addEventListener("keydown", onKeydown);
+    requestAnimationFrame(() => overlay.querySelector(".card-close")?.focus());
     return overlay;
   }
 
@@ -164,7 +178,23 @@ const Ready2GoFeatures = (() => {
     const load = async () => {
       try {
         const groups = await Storage.getGroups();
-        view.querySelector("#groupList").innerHTML = groups.length ? groups.map(group => `<article><b>${escapeHtml(group.name)}</b><small>${group.memberCount}人${group.isOwner ? "・管理者" : ""}</small>${group.inviteCode ? `<p class="invite-code">招待コード <strong>${escapeHtml(group.inviteCode)}</strong></p>` : ""}</article>`).join("") : '<p class="empty-note">参加中のグループはありません</p>';
+        const list = view.querySelector("#groupList");
+        list.innerHTML = groups.length ? groups.map(group => `<article><b>${escapeHtml(group.name)}</b><small>${group.memberCount}人${group.isOwner ? "・管理者" : ""}</small>${group.inviteCode ? `<p class="invite-code">招待コード <strong>${escapeHtml(group.inviteCode)}</strong></p>` : ""}<button type="button" class="btn-outline-sm" data-group-remove="${escapeHtml(group.id)}" data-owner="${group.isOwner ? "yes" : "no"}">${group.isOwner ? "グループを削除" : "グループから退出"}</button></article>`).join("") : '<p class="empty-note">参加中のグループはありません</p>';
+        list.querySelectorAll("[data-group-remove]").forEach(button => button.onclick = async () => {
+          const owner = button.dataset.owner === "yes";
+          const message = owner
+            ? "グループと共有予定を削除します。参加者からも見えなくなります。続けますか？"
+            : "このグループから退出しますか？";
+          if (!confirm(message)) return;
+          button.disabled = true;
+          try {
+            if (owner) await Storage.deleteGroup(button.dataset.groupRemove);
+            else await Storage.leaveGroup(button.dataset.groupRemove);
+            toast(owner ? "グループを削除しました" : "グループから退出しました");
+            await load();
+            window.dispatchEvent(new CustomEvent("ready2go:datachange"));
+          } catch (error) { alert(error.message); button.disabled = false; }
+        });
       } catch (error) { view.querySelector("#groupList").innerHTML = `<p class="empty-note">${escapeHtml(error.message)}</p>`; }
     };
     view.querySelector("#createGroup").onsubmit = async event => { event.preventDefault(); try { await Storage.createGroup(event.currentTarget.name.value); event.currentTarget.reset(); toast("グループを作成しました"); await load(); } catch (error) { alert(error.message); } };

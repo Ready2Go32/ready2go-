@@ -22,6 +22,14 @@ const Storage = (() => {
     return { ...extra, "Authorization": `Bearer ${getLineIdToken()}` };
   }
 
+  function checkResponseAuth(response) {
+    if (response.status === 401) {
+      sessionStorage.removeItem("lineIdToken");
+      window.dispatchEvent(new CustomEvent("ready2go:authrequired"));
+    }
+    return response;
+  }
+
   async function apiJson(path, options = {}) {
     if (!hasServer()) throw new Error("LINE連携ページからログインしてください");
     const request = { ...options, headers: authHeaders(options.headers || {}) };
@@ -29,7 +37,7 @@ const Storage = (() => {
       request.headers["Content-Type"] = "application/json";
       request.body = JSON.stringify(request.body);
     }
-    const response = await fetch(`${SERVER_URL}${path}`, request);
+    const response = checkResponseAuth(await fetch(`${SERVER_URL}${path}`, request));
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const error = new Error(data.error || `通信に失敗しました（${response.status}）`);
@@ -96,9 +104,9 @@ const Storage = (() => {
     // サーバー優先
     if (hasServer()) {
       try {
-        const res = await fetch(`${SERVER_URL}/api/events/${dateKey}`, {
+        const res = checkResponseAuth(await fetch(`${SERVER_URL}/api/events/${dateKey}`, {
           headers: authHeaders()
-        });
+        }));
         if (res.ok) {
           const list = await res.json();
           // オフラインでも閲覧・編集できるよう、取得結果を端末にも保存する。
@@ -128,7 +136,7 @@ const Storage = (() => {
     if (hasServer() && navigator.onLine) {
       try {
         const query = new URLSearchParams({ start: keys[0], end: keys[keys.length - 1] });
-        const response = await fetch(`${SERVER_URL}/api/events-range?${query}`, { headers: authHeaders() });
+        const response = checkResponseAuth(await fetch(`${SERVER_URL}/api/events-range?${query}`, { headers: authHeaders() }));
         if (response.ok) {
           const serverEvents = await response.json();
           for (const dateKey of keys) {
@@ -214,10 +222,10 @@ const Storage = (() => {
     try {
       for (const dateKey of dates) {
         const list = await getLocalEvents(dateKey);
-        const res = await fetch(`${SERVER_URL}/api/events/${dateKey}`, {
+        const res = checkResponseAuth(await fetch(`${SERVER_URL}/api/events/${dateKey}`, {
           method: "PUT", headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({ events: list })
-        });
+        }));
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         clearDatePending(dateKey);
       }
@@ -269,10 +277,10 @@ const Storage = (() => {
     markDatePending(dateKey);
     if (!hasServer() || !navigator.onLine) return false;
     try {
-      const response = await fetch(`${SERVER_URL}/api/events/${dateKey}`, {
+      const response = checkResponseAuth(await fetch(`${SERVER_URL}/api/events/${dateKey}`, {
         method: "PUT", headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ events: list })
-      });
+      }));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       clearDatePending(dateKey);
       return true;
@@ -334,14 +342,14 @@ const Storage = (() => {
       method: "POST",
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(settings)
-    });
+    }).then(checkResponseAuth);
   }
 
   async function loadUserSettings() {
     const local = JSON.parse(localStorage.getItem("userSettings") || "{}");
     if (!hasServer() || !navigator.onLine) return local;
     try {
-      const response = await fetch(`${SERVER_URL}/api/user-settings`, { headers: authHeaders() });
+      const response = checkResponseAuth(await fetch(`${SERVER_URL}/api/user-settings`, { headers: authHeaders() }));
       if (!response.ok) return local;
       const serverSettings = await response.json();
       const merged = { ...local, ...serverSettings };
@@ -386,7 +394,7 @@ const Storage = (() => {
 
   async function testLineNotification() {
     if (!hasServer()) throw new Error("LINE連携ページからログインしてください");
-    const res = await fetch(`${SERVER_URL}/api/test-notification`, { method: "POST", headers: authHeaders() });
+    const res = checkResponseAuth(await fetch(`${SERVER_URL}/api/test-notification`, { method: "POST", headers: authHeaders() }));
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "送信できませんでした");
   }
 
@@ -403,6 +411,8 @@ const Storage = (() => {
   const getGroups = () => apiJson("/api/groups");
   const createGroup = name => apiJson("/api/groups", { method: "POST", body: { name } });
   const joinGroup = inviteCode => apiJson("/api/groups/join", { method: "POST", body: { inviteCode } });
+  const leaveGroup = groupId => apiJson(`/api/groups/${encodeURIComponent(groupId)}/membership`, { method: "DELETE" });
+  const deleteGroup = groupId => apiJson(`/api/groups/${encodeURIComponent(groupId)}`, { method: "DELETE" });
   const addGroupEvent = (groupId, dateKey, event) => apiJson(`/api/groups/${encodeURIComponent(groupId)}/events/${dateKey}`, { method: "POST", body: event });
   const deleteGroupEvent = (groupId, dateKey, eventId) => apiJson(`/api/groups/${encodeURIComponent(groupId)}/events/${dateKey}/${encodeURIComponent(eventId)}`, { method: "DELETE" });
   async function getGroupEventsForDates(dateKeys) {
@@ -417,7 +427,7 @@ const Storage = (() => {
   async function exportData() {
     let data;
     if (hasServer()) {
-      const response = await fetch(`${SERVER_URL}/api/backup`, { headers: authHeaders() });
+      const response = checkResponseAuth(await fetch(`${SERVER_URL}/api/backup`, { headers: authHeaders() }));
       if (!response.ok) throw new Error("サーバーからバックアップを取得できませんでした");
       data = await response.json();
     } else {
@@ -456,11 +466,11 @@ const Storage = (() => {
       throw new Error("Ready2Goのバックアップファイルではありません");
     }
     if (hasServer()) {
-      const response = await fetch(`${SERVER_URL}/api/restore`, {
+      const response = checkResponseAuth(await fetch(`${SERVER_URL}/api/restore`, {
         method: "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(backup)
-      });
+      }));
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
         throw new Error(result.error || "復元できませんでした");
@@ -476,6 +486,24 @@ const Storage = (() => {
     return true;
   }
 
+  const deleteAccount = () => apiJson("/api/account", { method: "DELETE", body: { confirm: "DELETE" } });
+
+  async function clearLocalData() {
+    try { db?.close(); } catch (_) {}
+    db = null;
+    await new Promise(resolve => {
+      if (!window.indexedDB) return resolve();
+      const request = indexedDB.deleteDatabase("CalendarDB");
+      request.onsuccess = request.onerror = request.onblocked = () => resolve();
+    });
+    localStorage.clear();
+    sessionStorage.clear();
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter(key => key.startsWith("ready2go-")).map(key => caches.delete(key)));
+    }
+  }
+
   window.addEventListener("online", syncAllToServer);
   window.addEventListener("offline", () => updateSyncStatus());
 
@@ -485,7 +513,7 @@ const Storage = (() => {
     loadUserSettings, syncUserSettings, syncAllToServer, testLineNotification, exportData, importData,
     getLineIdToken, hasServer, updateSyncStatus, apiJson, getServerStatus,
     getNotificationLogs, resendNotification, getFeedback, submitFeedback, voteFeedback,
-    getGroups, createGroup, joinGroup, getGroupEventsForDates, addGroupEvent, deleteGroupEvent,
-    getTestAccess, joinTest
+    getGroups, createGroup, joinGroup, leaveGroup, deleteGroup, getGroupEventsForDates, addGroupEvent, deleteGroupEvent,
+    getTestAccess, joinTest, deleteAccount, clearLocalData
   };
 })();

@@ -12,7 +12,7 @@ Ready2Goは標準PostgreSQLへ対応しています。保存先から発行さ�
 `https://ready2go-calendar-2026.onrender.com/health`を開き、次なら成功です。
 
 ```json
-{"ok":true,"users":1,"storage":"postgresql"}
+{"ok":true,"ready":true,"users":1,"storage":"postgresql","databaseConfigured":true,"missingEnvironment":[]}
 ```
 
 ## Renderで設定する値
@@ -33,5 +33,4 @@ DATABASE_SSL=true
 - PostgreSQL接続URLを発行できること
 - グループの責任者が利用規約と料金条件を確認すること
 
-Render無料PostgreSQLは作成後30日で期限切れになるため、短期テスト用です。正式公開前は、グループの責任者と長期保存できるプランまたはサービスを選んでください。
-
+RenderのFree PostgreSQLは作成後30日で期限切れになるため、短期テスト用です。正式公開前は、管理する大人とも相談し、長期保存とバックアップに対応したプランまたはサービスを選んでください。

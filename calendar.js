@@ -186,6 +186,7 @@ const Calendar = (() => {
 
   // ── 予定追加・編集モーダル ────────────────────────────
   async function openModal(dateKey, eventIdx = null) {
+    const previousFocus = document.activeElement;
     const list    = await Storage.getEvents(dateKey);
     const isEdit  = eventIdx !== null;
     const current = isEdit
@@ -196,11 +197,14 @@ const Calendar = (() => {
 
     const overlay = document.createElement("div");
     overlay.className = "modal";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "eventModalTitle");
     overlay.innerHTML = `
       <div class="card">
         <div class="card-header">
-          <h3>${isEdit ? "✏️ 予定の編集" : "➕ 予定の追加"}</h3>
-          <button class="card-close" id="cardClose">✕</button>
+          <h3 id="eventModalTitle">${isEdit ? "✏️ 予定の編集" : "➕ 予定の追加"}</h3>
+          <button type="button" class="card-close" id="cardClose" aria-label="閉じる">✕</button>
         </div>
         <div class="form-group">
           <label>予定名</label>
@@ -238,6 +242,16 @@ const Calendar = (() => {
       </div>`;
 
     document.body.appendChild(overlay);
+    document.body.classList.add("modal-open");
+    const onKeydown = event => { if (event.key === "Escape") closeModal(); };
+    const closeModal = () => {
+      document.removeEventListener("keydown", onKeydown);
+      overlay.remove();
+      document.body.classList.remove("modal-open");
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+    };
+    document.addEventListener("keydown", onKeydown);
+    requestAnimationFrame(() => overlay.querySelector("#m-title")?.focus());
 
     const tmInput = overlay.querySelector("#m-time");
     const tmDigits = overlay.querySelector("#m-time-digits");
@@ -251,13 +265,13 @@ const Calendar = (() => {
       if (tmInput.value) tmDigits.value = tmInput.value.replace(":", "");
     });
 
-    overlay.querySelector("#m-cancel").onclick = () => overlay.remove();
-    overlay.querySelector("#cardClose").onclick = () => overlay.remove();
-    overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+    overlay.querySelector("#m-cancel").onclick = closeModal;
+    overlay.querySelector("#cardClose").onclick = closeModal;
+    overlay.onclick = e => { if (e.target === overlay) closeModal(); };
     overlay.querySelector("#m-delete")?.addEventListener("click", async () => {
       if (!confirm(`「${current.title}」を削除しますか？`)) return;
       await Storage.deleteEvent(dateKey, eventIdx);
-      overlay.remove();
+      closeModal();
       window.dispatchEvent(new Event("ready2go:datachange"));
       draw();
     });
@@ -300,7 +314,7 @@ const Calendar = (() => {
         await Storage.addRecurringEvent(newDate, newEvent);
       }
 
-      overlay.remove();
+      closeModal();
       window.dispatchEvent(new Event("ready2go:datachange"));
       draw();
     };
@@ -323,20 +337,33 @@ const Calendar = (() => {
   }
 
   function openSharedModal(dateKey, event) {
+    const previousFocus = document.activeElement;
     const overlay = document.createElement("div");
     overlay.className = "modal";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "sharedModalTitle");
     const items = (event.items || []).map(item => typeof item === "string" ? item : item.text).filter(Boolean);
-    overlay.innerHTML = `<div class="card"><div class="card-header"><h3>👥 共有予定</h3><button class="card-close">✕</button></div>
+    overlay.innerHTML = `<div class="card"><div class="card-header"><h3 id="sharedModalTitle">👥 共有予定</h3><button type="button" class="card-close" aria-label="閉じる">✕</button></div>
       <p><b>${escapeHtml(event.time || "--:--")} ${escapeHtml(event.title)}</b></p>
       <p class="form-help">${escapeHtml(event._groupName || "共有グループ")}・${escapeHtml(dateKey)}</p>
       ${items.length ? `<div class="shared-items"><b>🎒 持ち物</b><ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
       ${event._canDelete ? '<button type="button" class="btn-danger" id="sharedDelete">この共有予定を削除</button>' : ""}
       <div class="form-actions"><button type="button" class="btn-primary" id="sharedClose">閉じる</button></div></div>`;
     document.body.appendChild(overlay);
-    const close = () => overlay.remove();
+    document.body.classList.add("modal-open");
+    const onKeydown = keyEvent => { if (keyEvent.key === "Escape") close(); };
+    const close = () => {
+      document.removeEventListener("keydown", onKeydown);
+      overlay.remove();
+      document.body.classList.remove("modal-open");
+      if (previousFocus instanceof HTMLElement) previousFocus.focus();
+    };
     overlay.querySelector(".card-close").onclick = close;
     overlay.querySelector("#sharedClose").onclick = close;
     overlay.onclick = e => { if (e.target === overlay) close(); };
+    document.addEventListener("keydown", onKeydown);
+    requestAnimationFrame(() => overlay.querySelector("#sharedClose")?.focus());
     overlay.querySelector("#sharedDelete")?.addEventListener("click", async () => {
       if (!confirm(`「${event.title}」をグループから削除しますか？`)) return;
       await Storage.deleteGroupEvent(event._groupId, dateKey, event.id);

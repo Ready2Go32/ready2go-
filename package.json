@@ -1,17 +1,22 @@
 {
   "name": "ready2go-server",
-  "version": "1.0.0",
-  "description": "Ready2Go LINE連携サーバー",
+  "version": "1.1.0",
+  "description": "予定・天気・ごみ収集・LINE通知をまとめるReady2Go",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "node --test --test-concurrency=1",
+    "check": "node scripts/check-project.js && npm test"
+  },
+  "engines": {
+    "node": ">=20 <25"
   },
   "dependencies": {
     "@line/bot-sdk": "^9.3.0",
     "dotenv": "^16.4.5",
-    "express": "^4.18.3",
-    "node-cron": "^3.0.3",
+    "express": "5.2.1",
+    "node-cron": "4.6.0",
     "node-fetch": "^2.7.0",
     "pg": "^8.23.0"
   }
