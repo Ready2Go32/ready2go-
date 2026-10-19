@@ -62,11 +62,12 @@ const Settings = (() => {
   }
 
   function applyFontSize() {
-    const oldToNew = { "13":"14", "15":"16", "17":"18", "19":"20" };
+    const oldToNew = { "13":"14", "15":"16", "17":"20", "18":"20", "19":"24" };
     const saved = localStorage.getItem("fontSize") || "16";
     const size = oldToNew[saved] || saved;
     localStorage.setItem("fontSize", size);
     document.body.style.fontSize = size + "px";
+    document.documentElement.style.setProperty("--user-font-scale", String(Number(size) / 16));
     const sel = document.getElementById("fontSize");
     if (sel) sel.value = size;
   }
@@ -74,6 +75,7 @@ const Settings = (() => {
   function onFontSizeChange(value) {
     localStorage.setItem("fontSize", value);
     document.body.style.fontSize = value + "px";
+    document.documentElement.style.setProperty("--user-font-scale", String(Number(value) / 16));
   }
 
   function applyDarkMode() {
@@ -334,7 +336,7 @@ const Settings = (() => {
     const authStatus = document.getElementById("authStatus");
     if (authStatus) {
       const connected = Storage.hasServer();
-      authStatus.textContent = connected ? "✓ LINEログイン済み・同期できます" : "LINEログインが必要です（端末保存は利用できます）";
+      authStatus.textContent = connected ? "LINE認証情報あり（通知の動作はテスト送信で確認）" : "LINEログインが必要です（端末保存は利用できます）";
       authStatus.classList.toggle("connected", connected);
       authStatus.classList.toggle("required", !connected);
     }

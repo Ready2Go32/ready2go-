@@ -877,6 +877,27 @@ select:focus, input[type="date"]:focus { border-color: var(--accent); }
 .btn-danger { width:calc(100% - 32px); margin:4px 16px 0; padding:10px; border:1px solid #fecaca; border-radius:var(--radius-sm); background:#fff1f2; color:#dc2626; font:700 14px var(--font); cursor:pointer; }
 [data-theme="dark"] .btn-danger { background:rgba(220,38,38,.14); border-color:rgba(248,113,113,.35); color:#fca5a5; }
 
+/* Usability improvements: make home priorities and text scaling noticeable. */
+:root { --user-font-scale: 1; }
+.summary-event,.summary-weather { min-height:125px; border:2px solid var(--accent); }
+.summary-event b,.summary-weather b { font-size:calc(18px * var(--user-font-scale)); }
+.summary-event small,.summary-weather small { font-size:calc(15px * var(--user-font-scale)); line-height:1.55; }
+.summary-event .summary-icon,.summary-weather .summary-icon { width:48px; height:48px; font-size:28px; }
+.calendar-add-guide,.calendar-weather-summary { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 16px; margin:10px 0; font-size:calc(15px * var(--user-font-scale)); }
+.calendar-weather-summary { border-left:5px solid var(--accent); font-weight:700; }
+.settings-row label,.settings-row select,.settings-note { font-size:calc(14px * var(--user-font-scale)); }
+.setup-step,.summary-card,.feature-buttons button,.weather-metric-grid article { font-size:calc(14px * var(--user-font-scale)); }
+@media(max-width:600px) {
+  .today-cards { grid-template-columns:1fr 1fr; }
+  .summary-event,.summary-weather { grid-column:1 / -1; min-height:130px; }
+  .calendar-grid.view-month .day-weather { display:block; font-size:10px; text-align:center; }
+}
+/* Stronger typographic scale across the primary page. */
+.app-tab-panel h1,.today-heading h1 { font-size:calc(22px * var(--user-font-scale)); }
+.section-title,.feature-heading h2 { font-size:calc(18px * var(--user-font-scale)); }
+.summary-card small,.tomorrow-list,.feature-list article,.weather-data-note { font-size:calc(13px * var(--user-font-scale)); }
+.calendar-grid.view-agenda .event,.calendar-grid.view-week .event { font-size:calc(13px * var(--user-font-scale)); }
+.settings-row { line-height:1.6; }
 /* ── レスポンシブ ────────────────────────────────────── */
 @media (max-width: 900px) {
   .calendar-grid { grid-template-columns: 1fr; }
@@ -945,6 +966,18 @@ select:focus, input[type="date"]:focus { border-color: var(--accent); }
   .bottom-nav-item small { font-size:11px; }
 }
 
+@media(max-width:600px) {
+  /* 既存のモバイル用 display:none 指定より後で天気を再表示 */
+  .calendar-grid.view-month .day-weather { display:block; font-size:10px; text-align:center; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* Ready2Go dual location weather comparison */
+.weather-location-compare { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:14px 0; }
+.weather-location-compare > div { background:var(--surface); padding:16px; border:1px solid var(--border); border-radius:14px; font-size:calc(15px * var(--user-font-scale)); line-height:1.65; }
+@media(max-width:600px) { .weather-location-compare { grid-template-columns:1fr; } }
+
+.settings-panel h2,.gc-sort-box h2 { font-size:calc(22px * var(--user-font-scale)); }
+.weather-page-block small,.summary-card small,.form-help { font-size:calc(13px * var(--user-font-scale)); }

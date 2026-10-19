@@ -39,7 +39,8 @@
         localStorage.setItem("consentData", "yes");
         const allowLocation = document.getElementById("consentLocation").checked;
         localStorage.setItem("consentLocation", allowLocation ? "yes" : "no");
-        localStorage.setItem("locationMode", allowLocation ? "gps" : "address");
+        // 位置情報への同意はGPS優先の設定を意味しない。住所を既定値にする。
+        localStorage.setItem("locationMode", "address");
         modal.hidden = true; resolve();
       };
     });
@@ -125,7 +126,7 @@
     if (addButton) addButton.hidden = targetId !== "calendarSection";
     Settings.closePanel();
     if (targetId === "calendarSection") Calendar.draw();
-    if (targetId === "weatherSection") Weather.renderDetails();
+    if (targetId === "weatherSection") { Weather.renderDetails(); Weather.loadGpsComparison().catch(console.warn); }
     localStorage.setItem("ready2goCurrentTab", targetId);
     window.scrollTo({ top:0, behavior:smooth ? "smooth" : "auto" });
   }
@@ -205,12 +206,17 @@
     }
   });
 
+  // Direct navigation: select requested tab before waiting for weather or synchronization.
+  const requestedPage = new URLSearchParams(location.search).get("open");
+  const desiredTab = requestedPage === "calendar" ? "calendarSection" : requestedPage === "weather" ? "weatherSection" : requestedPage === "home" ? "todaySection" : null;
+  if (desiredTab) showTab(desiredTab, false);
   // ── 初回ロード ─────────────────────────────────────────
   await loadAndDraw();
   await Dashboard.init();
+  Weather.loadGpsComparison().catch(console.warn);
   await Ready2GoFeatures.init();
 
-  const openTarget = new URLSearchParams(location.search).get("open");
+  const openTarget = requestedPage;
   if (openTarget === "calendar") showTab("calendarSection", false);
   else if (openTarget === "weather") showTab("weatherSection", false);
   else {
