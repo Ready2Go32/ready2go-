@@ -43,6 +43,7 @@
       <button type="button" id="closeSettingsBtn" class="settings-close" aria-label="設定を閉じる">✕</button>
     </div>
     <div id="authStatus" class="settings-note auth-status" role="status">LINE連携を確認中…</div>
+    <p class="settings-note">ホーム画面に追加したアプリはブラウザーとは別の保存領域になる場合があります。未連携の場合は「LINEでログインし直す」を押してください。LINE通知の受信には公式アカウントの友だち追加とテスト通知の成功も必要です。</p>
 
     <div class="settings-section">
       <p class="settings-section-title">🗑 ゴミ収集</p>
@@ -75,7 +76,7 @@
 
     <div class="settings-section">
       <p class="settings-section-title">📍 地域・データ</p>
-      <div class="settings-row"><label>地域の決め方</label><select id="locationMode"><option value="address">住所選択</option><option value="gps">位置情報</option></select></div>
+      <div class="settings-row"><label>天気の取得場所（初期設定は選択住所）</label><select id="locationMode"><option value="address">住所選択</option><option value="gps">現在地も併記（登録住所優先）</option></select></div>
       <button type="button" id="installAppBtn" class="btn-outline-sm" hidden>ホーム画面に追加</button>
       <div id="syncStatus" class="settings-note">同期状態を確認中…</div>
     </div>
@@ -102,12 +103,12 @@
         </select>
       </div>
       <div class="settings-row">
-        <label>文字サイズ</label>
+        <label>文字サイズ（画面全体の読みやすさ）</label>
         <select id="fontSize">
-          <option value="14">小</option>
-          <option value="16" selected>中</option>
-          <option value="18">大</option>
-          <option value="20">特大</option>
+          <option value="14">小（14px）</option>
+          <option value="16" selected>標準（16px）</option>
+          <option value="20">大（20px）</option>
+          <option value="24">特大（24px）</option>
         </select>
       </div>
       <div class="settings-row">
@@ -170,7 +171,7 @@
     </div>
 
     <section id="setupGuide" class="setup-guide" hidden>
-      <div class="feature-heading"><div><span class="feature-kicker">はじめの設定</span><h2>Ready2Goを使う準備</h2></div><b id="setupProgressText">0/5</b></div>
+      <div class="feature-heading"><div><span class="feature-kicker">はじめの設定</span><h2>Ready2Goを使う準備</h2></div><b id="setupProgressText">0/2</b></div>
       <div class="setup-progress"><span id="setupProgressBar"></span></div>
       <div id="setupSteps" class="setup-steps"></div>
     </section>
@@ -198,7 +199,8 @@
 
   <!-- 週ナビゲーション -->
   <section id="calendarSection" class="app-section app-tab-panel" data-tab-panel="calendar" hidden>
-  <div class="tab-page-heading"><div><p>スケジュール</p><h1>予定カレンダー</h1></div><span>予定だけを集中して確認</span></div>
+  <div class="tab-page-heading"><div><p>スケジュール</p><h1>予定カレンダー</h1></div><span>日付をタップすると予定を追加できます</span></div>
+  <p class="calendar-add-guide">📅 日付の空白部分をタップすると、同じ日に2件目・3件目の予定も追加できます。</p>
   <div class="calendar-toolbar">
     <div class="view-switch" role="group" aria-label="カレンダー表示">
       <button type="button" class="view-btn active" data-view="month">月</button>
@@ -215,6 +217,8 @@
 
   <!-- カレンダー -->
   <section class="calendar-section">
+    <div id="calendarWeatherSummary" class="calendar-weather-summary" aria-live="polite">☁️ 天気を読み込み中…</div>
+    <p class="calendar-weather-summary" id="calendarWeatherAlert">⚠️ 気象庁の<a href="https://www.jma.go.jp/bosai/map.html#contents=warning" target="_blank" rel="noopener">警報・注意報</a>と<a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">台風情報</a>も確認できます。</p>
     <div id="calendar" class="calendar-grid"></div>
   </section>
   </section>
@@ -225,6 +229,10 @@
       <button type="button" id="weatherRefreshBtn" class="weather-refresh-btn">↻ 更新</button>
     </div>
 
+    <section class="weather-location-compare" aria-label="2地点の天気比較">
+      <div id="addressWeatherComparison">🏠 登録住所の天気（基本表示）</div>
+      <div id="gpsWeatherComparison" aria-live="polite">📍 現在地付近の天気を確認中…</div>
+    </section>
     <section class="weather-hero">
       <div class="weather-hero-main"><span id="weatherHeroIcon" class="weather-hero-icon">☁️</span><div><p id="weatherHeroCondition">読み込み中…</p><strong id="weatherHeroTemp">--℃</strong><small id="weatherHeroRange">最高--℃／最低--℃</small></div></div>
       <div class="weather-hero-side"><span>体感温度</span><b id="weatherFeelsLike">--℃</b><small id="weatherUpdatedAt">更新時刻を確認中</small></div>
@@ -243,9 +251,14 @@
       <article><span>☀️</span><small>日差し・UV</small><b id="weatherUv">--</b><em id="weatherUvLabel">確認中</em></article>
       <article><span>🌲</span><small>花粉</small><b id="weatherPollen">--</b><em id="weatherPollenDetail">主要花粉の参考値</em></article>
       <article><span>🌅</span><small>日の出</small><b id="weatherSunrise">--:--</b><em id="weatherSunset">日の入 --:--</em></article>
-      <article><span>👁️</span><small>視界・雲量</small><b id="weatherCloud">--%</b><em>雲量</em></article>
+      <article><span>☁️</span><small>雲量</small><b id="weatherCloud">--%</b><em>雲量</em></article>
     </section>
 
+    <section class="weather-page-block" aria-label="予報の信頼性">
+      <h2 class="section-title">予報の正確さについて</h2>
+      <p class="weather-data-note" id="forecastAccuracy">予報元：Open-Meteo。これは予測値で、的中率を保証するものではありません。地域・時間・予報対象によって精度は変わります。</p>
+      <p class="weather-data-note">台風の接近、警報・注意報は公式発表を確認してください。<a href="https://www.jma.go.jp/bosai/map.html#contents=warning" target="_blank" rel="noopener">気象庁の警報・注意報を開く</a>　<a href="https://www.jma.go.jp/bosai/map.html#contents=typhoon" target="_blank" rel="noopener">気象庁の台風情報を開く</a></p>
+    </section>
     <section class="hourly-section weather-page-block">
       <div class="section-header"><h2 class="section-title">今日の時間別予報</h2><small>横にスライドできます</small></div>
       <div id="hourlyWeather" class="hourly-scroll"></div>

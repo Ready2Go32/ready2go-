@@ -46,22 +46,19 @@ const Ready2GoFeatures = (() => {
     const region = document.getElementById("region")?.value || localStorage.getItem(`region_${pref}`) || "";
     const area = localStorage.getItem(`area_${pref}_${region}`) || settings.area || "";
     const steps = [
-      { label:"LINEログイン", done:!!Storage.getLineIdToken(), action:"login" },
       { label:"住所・地区の選択", done:!!(pref && region && area), action:"location" },
-      { label:"通知時刻の設定", done:Array.isArray(settings.todayNotifyTimes) && settings.todayNotifyTimes.length > 0, action:"notification" },
-      { label:"LINEテスト通知", done:localStorage.getItem("lineTestSucceeded") === "yes", action:"test" },
       { label:"設定完了", done:localStorage.getItem("setupComplete") === "yes", action:"complete" }
     ];
     const completed = steps.filter(step => step.done).length;
     guide.hidden = completed === steps.length && localStorage.getItem("showSetupGuide") !== "yes";
-    document.getElementById("setupProgressText").textContent = `${completed}/5完了`;
-    document.getElementById("setupProgressBar").style.width = `${completed * 20}%`;
+    document.getElementById("setupProgressText").textContent = `${completed}/${steps.length}完了`;
+    document.getElementById("setupProgressBar").style.width = `${completed / steps.length * 100}%`;
     document.getElementById("setupSteps").innerHTML = steps.map((step, index) => `<button type="button" data-setup="${step.action}" class="${step.done ? "done" : ""}"><span>${step.done ? "✓" : index + 1}</span><b>${step.label}</b><small>${step.done ? "完了" : "設定する"}</small></button>`).join("");
     guide.querySelectorAll("[data-setup]").forEach(button => button.addEventListener("click", async () => {
       const action = button.dataset.setup;
       if (action === "login") location.href = "liff-init.html";
       if (action === "location") location.href = "garbage-calendar.html";
-      if (action === "notification") Settings.togglePanel();
+      // 通知の設定はチュートリアルの対象外。
       if (action === "test") document.getElementById("testLineBtn")?.click();
       if (action === "complete") {
         localStorage.setItem("setupComplete", "yes"); localStorage.removeItem("showSetupGuide");
@@ -79,6 +76,7 @@ const Ready2GoFeatures = (() => {
     const weather = Weather.getWeatherMap()[key];
     document.getElementById("tomorrowWeatherBadge").textContent = weather ? `${weather.icon} 最高${weather.temp}℃` : "天気未取得";
     const advice = [];
+    if ((weather?.rainChance ?? 0) >= 70) advice.push("大雨の予報です。警報・注意報と交通機関の情報を確認しましょう");
     if (["☔","🌧️","⚡","☃️"].includes(weather?.icon)) advice.push("傘や雨具を準備しましょう");
     if (weather?.temp >= 30) advice.push("水分を忘れず、暑さに気をつけましょう");
     if (weather?.temp <= 8) advice.push("上着を準備しましょう");
