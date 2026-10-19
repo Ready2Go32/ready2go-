@@ -44,7 +44,7 @@ const Dashboard = (() => {
       : "天気を取得できませんでした";
 
     const linked = !!Storage.getLineIdToken();
-    document.getElementById("lineStatusText").textContent = linked ? "LINE連携済み" : "連携ページからログインしてください";
+    document.getElementById("lineStatusText").textContent = linked ? "LINE認証情報あり（通知はテスト送信で確認）" : "LINE未認証：設定からログイン";
     const badge = document.getElementById("connectionBadge");
     const syncPending = localStorage.getItem("pendingServerSync") === "1";
     if (!navigator.onLine) {

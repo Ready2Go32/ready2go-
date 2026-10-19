@@ -46,6 +46,9 @@ const Calendar = (() => {
     if (!calEl || !labelEl) return;
 
     const wMap = Weather.getWeatherMap();
+    const weatherSummary = document.getElementById("calendarWeatherSummary");
+    const todayWeather = wMap[keyFromDate(new Date())];
+    if (weatherSummary) weatherSummary.textContent = todayWeather ? `今日の天気：${todayWeather.icon} ${todayWeather.text || ""} ${todayWeather.temp ?? "--"}℃` : "今日の天気：天気タブで予報を確認できます";
     const pref   = document.getElementById("pref")?.value || "東京都";
     const region = document.getElementById("region")?.value || "";
 
@@ -173,6 +176,7 @@ const Calendar = (() => {
       }
 
       box.onclick = () => openModal(key);
+      box.setAttribute("title", `${key}に予定を追加（複数登録できます）`);
       calEl.appendChild(box);
       renderedDays++;
     }
@@ -203,7 +207,7 @@ const Calendar = (() => {
     overlay.innerHTML = `
       <div class="card">
         <div class="card-header">
-          <h3 id="eventModalTitle">${isEdit ? "✏️ 予定の編集" : "➕ 予定の追加"}</h3>
+          <h3 id="eventModalTitle">${isEdit ? "✏️ 予定の編集" : "➕ 予定をもう1件追加できます"}</h3>
           <button type="button" class="card-close" id="cardClose" aria-label="閉じる">✕</button>
         </div>
         <div class="form-group">
