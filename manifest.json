@@ -40,7 +40,7 @@
     {
       "name": "ごみ収集",
       "short_name": "ごみ",
-      "url": "./garbage-calendar.html",
+      "url": "./index.html?open=garbage",
       "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]

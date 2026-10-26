@@ -133,14 +133,9 @@ const Settings = (() => {
   }
 
   function openGarbageCalendar() {
-    // LINE内ブラウザでも迷子にならないよう、同じタブで開く。
-    const pref   = document.getElementById("pref")?.value || "";
-    const region = document.getElementById("region")?.value || "";
-    const params = new URLSearchParams();
-    if (pref)   params.set("pref",   pref);
-    if (region) params.set("region", region);
-    const url = "garbage-calendar.html" + (params.toString() ? "?" + params.toString() : "");
-    location.href = url;
+    // ページ移動せず、アプリ内の「ごみ」タブで開く。
+    if (window.openAppTab) window.openAppTab("garbageSection");
+    else location.href = "index.html?open=garbage";
   }
 
   function init() {
@@ -341,7 +336,7 @@ const Settings = (() => {
       authStatus.classList.toggle("required", !connected);
     }
     const version = document.getElementById("appVersion");
-    if (version) version.textContent = `Ready2Go v${window.APP_CONFIG?.version || "1.1.0"}`;
+    if (version) version.textContent = `Ready2Go v${window.APP_CONFIG?.version || "1.2.0"}`;
     document.getElementById("reloginBtn")?.addEventListener("click", () => {
       sessionStorage.removeItem("lineIdToken");
       location.href = "liff-init.html";

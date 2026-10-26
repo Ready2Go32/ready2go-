@@ -5,7 +5,26 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>ゴミ収集カレンダー — Ready2Go</title>
   <meta name="theme-color" content="#2f7de1">
+  <script>
+    // ごみ画面はアプリ内「ごみ」タブに埋め込んで表示する。
+    // 古いブックマーク等で単独で開かれた場合は、アプリ本体のごみタブへ移動する。
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var embedded = params.get("embed") === "1" && window.parent !== window;
+      if (!embedded) {
+        params.delete("embed"); params.set("open", "garbage");
+        location.replace("index.html?" + params.toString());
+        return;
+      }
+      document.documentElement.classList.add("embedded");
+    })();
+  </script>
   <link rel="stylesheet" href="style.css">
+  <style>
+    html.embedded body { padding-bottom: 24px; background: transparent; }
+    html.embedded .topbar, html.embedded .gc-bottom-nav { display: none; }
+    html.embedded .gc-container { padding-top: 16px; }
+  </style>
   <style>
     /* ── ゴミ収集カレンダー固有スタイル ── */
     .gc-container {
@@ -418,8 +437,14 @@
   const SERVER_URL = window.APP_CONFIG?.serverUrl || location.origin;
   const localDateKey = date => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
   // ── 設定の引き継ぎ ──
+  // 背景画像は親画面（アプリ本体）が表示するので、埋め込み時は重ねない。
+  const isEmbedded = document.documentElement.classList.contains("embedded");
   const savedBg = localStorage.getItem("bg");
-  document.body.style.backgroundImage = savedBg ? `url(${savedBg})` : "";
+  document.body.style.backgroundImage = savedBg && !isEmbedded ? `url(${savedBg})` : "";
+  // 地域や収集日が変わったことをアプリ本体へ知らせ、ホーム・予定の表示を更新させる。
+  const notifyParent = () => {
+    if (isEmbedded) window.parent.postMessage({ type: "ready2go:garbagechange" }, location.origin);
+  };
   const savedDark  = localStorage.getItem("darkMode") === "true";
   if (savedDark) document.documentElement.setAttribute("data-theme","dark");
   const palettes = {
@@ -435,7 +460,7 @@
   document.documentElement.style.setProperty("--accent-dark", palette.dark);
   document.documentElement.style.setProperty("--accent-soft", savedDark ? `${savedTheme}24` : palette.soft);
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", savedTheme);
-  const oldToNewFs = {"13":"14","15":"16","17":"18","19":"20"};
+  const oldToNewFs = { "13":"14", "15":"16", "17":"20", "18":"20", "19":"24" };
   const savedFs = localStorage.getItem("fontSize") || "16";
   document.body.style.fontSize = (oldToNewFs[savedFs] || savedFs) + "px";
   document.documentElement.style.setProperty("--user-font-scale", String(Number(oldToNewFs[savedFs] || savedFs) / 16));
@@ -691,6 +716,7 @@
     await Storage.saveGarbageSchedule(Garbage.makeKey(pref, region, area), weekly);
     if (persist) await Storage.syncUserSettings({ pref, region, area, garbageSchedule:schedule });
     currentSchedule = schedule;
+    notifyParent();
     document.getElementById("gc-manual-box").style.display = "none";
     renderAIResult(pref, region + (area ? ` ${area}` : ""), schedule);
     renderCalendar();
@@ -803,6 +829,7 @@
     const serverSchedule = { garbageTypes:manualTypes.map(item => ({ ...item, schedule:describeDays(item.days) })), sourceUrl, checkedAt, note:weekly._note, confidence:"manual", _manual:true };
     const synced = await Storage.syncUserSettings({ pref, region, area, garbageSchedule:serverSchedule });
     currentSchedule = serverSchedule;
+    notifyParent();
     document.getElementById("gc-manual-status").textContent = synced ? "✓ 自動保存しました" : "端末に保存済み・オンライン時に同期します";
     localStorage.setItem("pref", pref); localStorage.setItem("region_" + pref, region);
     localStorage.setItem("area_" + pref + "_" + region, area);

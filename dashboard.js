@@ -5,9 +5,12 @@ const Dashboard = (() => {
 
   async function nextEvent() {
     const now = new Date();
-    for (let offset = 0; offset < 31; offset++) {
-      const d = new Date(now); d.setDate(d.getDate() + offset);
-      const events = await Storage.getEvents(key(d));
+    // 31日分を1回の通信でまとめて取得する（以前は1日ずつ31回通信していた）。
+    const days = Array.from({ length: 31 }, (_, offset) => { const d = new Date(now); d.setDate(d.getDate() + offset); return d; });
+    const byDate = await Storage.getEventsForDates(days.map(key)).catch(() => ({}));
+    for (let offset = 0; offset < days.length; offset++) {
+      const d = days[offset];
+      const events = byDate[key(d)] || [];
       const sorted = events.filter(e => offset > 0 || (e.time || "23:59") >= now.toTimeString().slice(0,5))
         .sort((a,b) => (a.time || "").localeCompare(b.time || ""));
       if (sorted[0]) return { event: sorted[0], date: d, offset };
@@ -30,7 +33,7 @@ const Dashboard = (() => {
     document.getElementById("todayDateLabel").textContent = now.toLocaleDateString("ja-JP", { month:"long", day:"numeric", weekday:"short" });
     const eventResult = await nextEvent();
     document.getElementById("nextEventText").textContent = eventResult
-      ? `${eventResult.offset === 0 ? "今日" : `${eventResult.offset}日後`} ${eventResult.event.time} ${eventResult.event.title}`
+      ? `${eventResult.offset === 0 ? "今日" : eventResult.offset === 1 ? "明日" : `${eventResult.offset}日後`} ${eventResult.event.time}${eventResult.event.endTime ? `〜${eventResult.event.endTime}` : ""} ${eventResult.event.title}`
       : "今後31日間の予定はありません";
 
     const garbage = await nextGarbage();
@@ -65,7 +68,7 @@ const Dashboard = (() => {
   function init() {
     document.getElementById("nextEventCard")?.addEventListener("click", () => window.openAppTab?.("calendarSection"));
     document.getElementById("weatherSummaryCard")?.addEventListener("click", () => window.openAppTab?.("weatherSection"));
-    document.getElementById("nextGarbageCard")?.addEventListener("click", () => location.href = "garbage-calendar.html");
+    document.getElementById("nextGarbageCard")?.addEventListener("click", () => window.openAppTab?.("garbageSection"));
     document.getElementById("lineStatusCard")?.addEventListener("click", () => Settings.togglePanel());
     window.addEventListener("online", refresh); window.addEventListener("offline", refresh);
     return refresh();

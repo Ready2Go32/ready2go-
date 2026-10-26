@@ -981,3 +981,58 @@ select:focus, input[type="date"]:focus { border-color: var(--accent); }
 
 .settings-panel h2,.gc-sort-box h2 { font-size:calc(22px * var(--user-font-scale)); }
 .weather-page-block small,.summary-card small,.form-help { font-size:calc(13px * var(--user-font-scale)); }
+
+/* ── v1.2 予定追加画面（下部固定の追加ボタン） ───────────── */
+.event-card { display:flex; flex-direction:column; width:min(94vw,520px); max-height:90dvh; padding:0; overflow:hidden; }
+.event-card .card-header { margin:0; padding:16px 18px 10px; border-bottom:1px solid var(--border); }
+.event-card-body { flex:1; overflow-y:auto; padding:14px 18px 6px; overscroll-behavior:contain; }
+.event-card .form-row { gap:10px; }
+.event-card .form-row .form-group { min-width:0; }
+.event-card input[type="time"] { width:100%; min-width:0; padding:10px 12px; border:1.5px solid var(--border); border-radius:var(--radius-sm); background:var(--surface2); color:var(--text); font:14px var(--font); }
+.event-card-footer { display:flex; gap:10px; padding:12px 18px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--border); background:var(--surface); }
+.event-card-footer .btn-secondary { flex:0 0 32%; }
+.event-card-footer .btn-primary { min-height:48px; font-size:16px; }
+.preset-chips { display:flex; flex-wrap:wrap; gap:6px; }
+.preset-chip { display:inline-flex; align-items:center; gap:5px; min-height:38px; padding:6px 12px; border:0; border-radius:999px; color:#fff; font:600 13px var(--font); cursor:pointer; opacity:.88; }
+.preset-chip small { font-weight:400; opacity:.85; }
+.preset-chip.selected { opacity:1; outline:3px solid color-mix(in srgb,var(--accent) 45%,white); }
+.more-settings { margin:4px 0 10px; border:1px solid var(--border); border-radius:12px; background:var(--surface2); }
+.more-settings > summary { min-height:44px; display:flex; align-items:center; padding:0 14px; color:var(--text-2); font-weight:700; font-size:14px; cursor:pointer; list-style:none; }
+.more-settings > summary::-webkit-details-marker { display:none; }
+.more-settings > summary::after { content:"▾"; margin-left:auto; transition:transform .2s; }
+.more-settings[open] > summary::after { transform:rotate(180deg); }
+.more-settings > :not(summary) { margin:0 14px 12px; }
+.more-settings .btn-danger { width:calc(100% - 28px); }
+@media (max-width:600px) {
+  /* スマホでは下から出るシートにして、追加ボタンを親指の届く位置に固定 */
+  .event-modal { align-items:flex-end; }
+  .event-card { width:100vw; max-width:100vw; max-height:92dvh; border-radius:18px 18px 0 0; }
+}
+
+/* ── v1.2 ごみタグ：絵文字だけにせず名前を表示 ───────────── */
+.garbage-tag { display:inline-flex; align-items:center; gap:3px; text-shadow:0 1px 1px rgba(0,0,0,.25); }
+.garbage-short { display:none; }
+.calendar-grid.view-month .garbage-name { display:none; }
+.calendar-grid.view-month .garbage-short { display:inline; }
+.garbage-legend { display:flex; flex-wrap:wrap; gap:6px 12px; margin-top:12px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--text-2); font-size:12px; }
+.garbage-legend b { width:100%; color:var(--text); font-size:13px; }
+.garbage-legend span { display:inline-flex; align-items:center; gap:5px; }
+.garbage-legend i { width:10px; height:10px; border-radius:3px; display:inline-block; }
+@media (max-width:600px) {
+  .calendar-grid.view-month .garbage-tag { max-width:none; width:100%; justify-content:center; padding:1px 2px; font-size:9px; line-height:1.3; border-radius:3px; }
+  .calendar-grid.view-month .garbage-icon { display:none; }
+  .calendar-grid.view-month .garbage-row { flex-direction:column; gap:2px; }
+}
+
+/* ── v1.2 明日の持ち物：予定ごとに区切る ───────────────── */
+.item-group { padding:6px 0 4px; }
+.item-group + .item-group { margin-top:6px; border-top:1px solid var(--border); padding-top:10px; }
+.item-group h4 { display:flex; align-items:center; gap:6px; margin:0 0 4px; color:var(--text); font-size:13px; }
+.item-group h4 span { padding:1px 6px; border-radius:6px; background:var(--accent-light); color:var(--accent); font-size:11px; }
+.item-group h4 small { margin-left:auto; color:var(--text-3); font-weight:400; }
+.item-group .check-item:last-child { border-bottom:0; }
+
+/* ── v1.2 ごみタブ（アプリ内に埋め込み） ─────────────────── */
+.garbage-tab { margin:0; }
+.garbage-frame { position:fixed; left:0; right:0; top:var(--topbar-h); bottom:calc(64px + env(safe-area-inset-bottom)); width:100%; height:auto; border:0; background:transparent; z-index:1; }
+body[data-tab="garbageSection"] { overflow:hidden; }

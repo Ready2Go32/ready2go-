@@ -95,7 +95,9 @@
     regionSel.onchange = () => {
       const pref = prefSel?.value || "東京都";
       localStorage.setItem("region_" + pref, regionSel.value);
-      Calendar.draw();
+      // 予定タブが見えていなければ、次に開いたときに描き直す。
+      Calendar.markDirty();
+      if (!document.getElementById("calendarSection")?.hidden) Calendar.draw();
       Dashboard?.refresh?.();
       Ready2GoFeatures?.refresh?.();
     };
@@ -116,23 +118,72 @@
       else button.removeAttribute("aria-current");
     });
   }
-  function showTab(targetId, smooth = true) {
+  // ごみ画面は同じアプリ内のタブとして埋め込む。初回だけ読み込み、地域が変わったら再読み込み。
+  let garbageFrameRegion = null;
+  function currentRegionKey() {
+    const pref = document.getElementById("pref")?.value || "";
+    return `${pref}::${document.getElementById("region")?.value || ""}`;
+  }
+  function loadGarbageFrame() {
+    const frame = document.getElementById("garbageFrame");
+    if (!frame) return;
+    const regionKey = currentRegionKey();
+    if (garbageFrameRegion === regionKey && frame.src) return;
+    garbageFrameRegion = regionKey;
+    const params = new URLSearchParams({ embed: "1" });
+    const pref = document.getElementById("pref")?.value, region = document.getElementById("region")?.value;
+    if (pref) params.set("pref", pref);
+    if (region) params.set("region", region);
+    frame.src = `garbage-calendar.html?${params}`;
+  }
+  // 埋め込んだごみ画面で地域や収集日が変わったら、ホームと予定にも反映する。
+  window.addEventListener("message", event => {
+    if (event.origin !== location.origin || event.data?.type !== "ready2go:garbagechange") return;
+    const savedPref = localStorage.getItem("pref");
+    if (prefSel && savedPref && prefSel.value !== savedPref) {
+      prefSel.value = savedPref;
+      updateRegionSelect(savedPref);
+    }
+    const savedRegion = localStorage.getItem("region_" + (prefSel?.value || ""));
+    const regionSelect = document.getElementById("region");
+    if (regionSelect && savedRegion && regionSelect.value !== savedRegion
+      && [...regionSelect.options].some(option => option.value === savedRegion)) {
+      regionSelect.value = savedRegion;
+    }
+    garbageFrameRegion = currentRegionKey();
+    Calendar.markDirty();
+    Dashboard?.refresh?.();
+    Ready2GoFeatures?.refresh?.();
+  });
+
+  let gpsCheckedAt = 0;
+  function showTab(targetId, smooth = false) {
     const target = document.getElementById(targetId);
     if (!target?.classList.contains("app-tab-panel")) return;
+    const changed = currentTab !== targetId;
     currentTab = targetId;
     document.querySelectorAll(".app-tab-panel").forEach(panel => { panel.hidden = panel.id !== targetId; });
+    document.body.dataset.tab = targetId;
     updateBottomNavigation(false);
     const addButton = document.getElementById("quickAddEvent");
     if (addButton) addButton.hidden = targetId !== "calendarSection";
     Settings.closePanel();
-    if (targetId === "calendarSection") Calendar.draw();
-    if (targetId === "weatherSection") { Weather.renderDetails(); Weather.loadGpsComparison().catch(console.warn); }
+    // 変更があったときだけ描き直す（毎回の通信と再描画をしない）。
+    if (targetId === "calendarSection") Calendar.drawIfNeeded();
+    if (targetId === "weatherSection") {
+      Weather.renderDetails();
+      // 現在地の取得は重いので10分に1回まで。
+      if (Date.now() - gpsCheckedAt > 10 * 60_000) {
+        gpsCheckedAt = Date.now();
+        Weather.loadGpsComparison().catch(console.warn);
+      }
+    }
+    if (targetId === "garbageSection") loadGarbageFrame();
     localStorage.setItem("ready2goCurrentTab", targetId);
-    window.scrollTo({ top:0, behavior:smooth ? "smooth" : "auto" });
+    if (changed) window.scrollTo({ top:0, behavior:smooth ? "smooth" : "auto" });
   }
   window.openAppTab = showTab;
   document.querySelectorAll(".bottom-nav-item[data-target]").forEach(btn => btn.addEventListener("click", () => showTab(btn.dataset.target)));
-  document.getElementById("bottomGarbage")?.addEventListener("click", () => location.href = "garbage-calendar.html");
   document.getElementById("bottomSettings")?.addEventListener("click", e => {
     // 開いた直後にdocument側の「パネル外クリック」で閉じないようにする。
     e.preventDefault();
@@ -208,20 +259,21 @@
 
   // Direct navigation: select requested tab before waiting for weather or synchronization.
   const requestedPage = new URLSearchParams(location.search).get("open");
-  const desiredTab = requestedPage === "calendar" ? "calendarSection" : requestedPage === "weather" ? "weatherSection" : requestedPage === "home" ? "todaySection" : null;
+  const TAB_BY_PARAM = { calendar:"calendarSection", weather:"weatherSection", garbage:"garbageSection", home:"todaySection" };
+  const desiredTab = TAB_BY_PARAM[requestedPage] || null;
   if (desiredTab) showTab(desiredTab, false);
   // ── 初回ロード ─────────────────────────────────────────
   await loadAndDraw();
   await Dashboard.init();
+  gpsCheckedAt = Date.now();
   Weather.loadGpsComparison().catch(console.warn);
   await Ready2GoFeatures.init();
 
   const openTarget = requestedPage;
-  if (openTarget === "calendar") showTab("calendarSection", false);
-  else if (openTarget === "weather") showTab("weatherSection", false);
+  if (TAB_BY_PARAM[openTarget]) showTab(TAB_BY_PARAM[openTarget], false);
   else {
     const savedTab = localStorage.getItem("ready2goCurrentTab");
-    showTab(["todaySection", "calendarSection", "weatherSection"].includes(savedTab) ? savedTab : "todaySection", false);
+    showTab(Object.values(TAB_BY_PARAM).includes(savedTab) ? savedTab : "todaySection", false);
   }
   if (openTarget === "settings") {
     Settings.togglePanel();

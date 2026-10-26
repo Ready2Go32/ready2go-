@@ -277,6 +277,11 @@
     </section>
   </section>
 
+  <!-- ごみ画面：初めて開いたときだけ読み込み、以後はタブ切替で即表示 -->
+  <section id="garbageSection" class="app-section app-tab-panel garbage-tab" data-tab-panel="garbage" hidden>
+    <iframe id="garbageFrame" class="garbage-frame" title="ごみ収集カレンダー" loading="lazy"></iframe>
+  </section>
+
 </main>
 
 <button type="button" id="quickAddEvent" class="quick-add-event" aria-label="今日の予定を追加" hidden>＋</button>
@@ -285,7 +290,7 @@
   <button type="button" class="bottom-nav-item active" data-target="todaySection" data-tab="home" aria-current="page"><span>🏠</span><small>ホーム</small></button>
   <button type="button" class="bottom-nav-item" data-target="calendarSection" data-tab="calendar"><span>📅</span><small>予定</small></button>
   <button type="button" class="bottom-nav-item" data-target="weatherSection" data-tab="weather"><span>☀️</span><small>天気</small></button>
-  <button type="button" class="bottom-nav-item" id="bottomGarbage"><span>♻️</span><small>ごみ</small></button>
+  <button type="button" class="bottom-nav-item" id="bottomGarbage" data-target="garbageSection" data-tab="garbage"><span>♻️</span><small>ごみ</small></button>
   <button type="button" class="bottom-nav-item" id="bottomSettings"><span>⚙️</span><small>設定</small></button>
 </nav>
 

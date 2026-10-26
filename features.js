@@ -57,7 +57,7 @@ const Ready2GoFeatures = (() => {
     guide.querySelectorAll("[data-setup]").forEach(button => button.addEventListener("click", async () => {
       const action = button.dataset.setup;
       if (action === "login") location.href = "liff-init.html";
-      if (action === "location") location.href = "garbage-calendar.html";
+      if (action === "location") window.openAppTab?.("garbageSection");
       // 通知の設定はチュートリアルの対象外。
       if (action === "test") document.getElementById("testLineBtn")?.click();
       if (action === "complete") {
@@ -86,13 +86,23 @@ const Ready2GoFeatures = (() => {
       ? allEvents.map(event => `<div><b>${escapeHtml(event.time || "--:--")}</b><span>${escapeHtml(event.title)}${event._shared ? ` <small>👥${escapeHtml(event._groupName)}</small>` : ""}</span></div>`).join("")
       : '<p class="empty-note">予定はありません</p>';
 
-    const itemRows = [];
-    events.forEach((event, eventIndex) => (event.items || []).forEach((item, itemIndex) => {
-      const normalized = typeof item === "string" ? { text:item, done:false } : item;
-      if (!normalized.text) return;
-      itemRows.push(`<label class="check-item"><input type="checkbox" data-event="${eventIndex}" data-item="${itemIndex}" ${normalized.done ? "checked" : ""}><span>${escapeHtml(normalized.text)}</span><small>${escapeHtml(event.title)}</small></label>`);
-    }));
-    document.getElementById("tomorrowItems").innerHTML = itemRows.length ? itemRows.join("") : '<p class="empty-note">予定の編集から持ち物を追加できます</p>';
+    // 持ち物は予定ごとにまとめる。持ち物つき予定が2件以上なら見出しで区切る。
+    const groupsWithItems = events.map((event, eventIndex) => {
+      const rows = (event.items || []).map((item, itemIndex) => {
+        const normalized = typeof item === "string" ? { text:item, done:false } : item;
+        if (!normalized?.text) return "";
+        return `<label class="check-item"><input type="checkbox" data-event="${eventIndex}" data-item="${itemIndex}" ${normalized.done ? "checked" : ""}><span>${escapeHtml(normalized.text)}</span></label>`;
+      }).filter(Boolean);
+      const done = (event.items || []).filter(item => typeof item === "object" && item.done).length;
+      return { event, rows, done };
+    }).filter(group => group.rows.length)
+      .sort((a, b) => String(a.event.time || "").localeCompare(String(b.event.time || "")));
+    const separate = groupsWithItems.length >= 2;
+    document.getElementById("tomorrowItems").innerHTML = groupsWithItems.length
+      ? groupsWithItems.map(({ event, rows, done }) => separate
+        ? `<section class="item-group"><h4><span>${escapeHtml(event.time || "--:--")}</span>${escapeHtml(event.title)}<small>${done}/${rows.length}</small></h4>${rows.join("")}</section>`
+        : rows.join("")).join("")
+      : '<p class="empty-note">予定の編集から持ち物を追加できます</p>';
     document.querySelectorAll("#tomorrowItems input[data-event]").forEach(input => input.addEventListener("change", async () => {
       const eventIndex = Number(input.dataset.event), itemIndex = Number(input.dataset.item);
       const event = events[eventIndex];

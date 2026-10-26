@@ -1,6 +1,6 @@
 {
   "name": "ready2go-server",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "予定・天気・ごみ収集・LINE通知をまとめるReady2Go",
   "main": "server.js",
   "scripts": {

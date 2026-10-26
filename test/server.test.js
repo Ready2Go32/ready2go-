@@ -76,7 +76,7 @@ test("サーバーが起動しヘルスチェックへ応答する", async () =>
     assert.equal(response.status, 200);
     const health = await response.json();
     assert.equal(health.ok, true);
-    assert.equal(health.version, "1.1.0");
+    assert.equal(health.version, "1.2.0");
     assert.equal(health.ready, false);
     assert.equal((await fetch(`${baseUrl}/index.html`)).status, 200);
     assert.equal((await fetch(`${baseUrl}/server.js`)).status, 404);
@@ -84,4 +84,13 @@ test("サーバーが起動しヘルスチェックへ応答する", async () =>
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+test("終了時刻とカテゴリを検査する", () => {
+  const event = cleanEvent({ title: "バイト", time: "17:00", endTime: "21:30", category: "work" });
+  assert.equal(event.endTime, "21:30");
+  assert.equal(event.category, "work");
+  assert.equal(cleanEvent({ title: "x", time: "09:00", category: "<script>" }).category, "other");
+  assert.throws(() => cleanEvent({ title: "x", time: "10:00", endTime: "09:00" }));
+  assert.throws(() => cleanEvent({ title: "x", time: "10:00", endTime: "25:00" }));
 });

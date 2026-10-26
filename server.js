@@ -15,7 +15,7 @@ const path       = require("path");
 const { loadData, saveData, getStorageMode } = require("./database");
 
 const app = express();
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.2.0";
 const REQUIRED_PRODUCTION_ENV = [
   "DATABASE_URL", "LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "LINE_LOGIN_CHANNEL_ID", "LIFF_ID", "APP_URL",
   "OPERATOR_NAME", "CONTACT_EMAIL"
@@ -81,7 +81,8 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   res.header("X-Content-Type-Options", "nosniff");
   res.header("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.header("X-Frame-Options", "DENY");
+  // ごみタブは同じサイトのページを埋め込むため、同一オリジンだけ許可する。
+  res.header("X-Frame-Options", "SAMEORIGIN");
   res.header("Permissions-Policy", "geolocation=(self), camera=(), microphone=()");
   res.header("Content-Security-Policy", [
     "default-src 'self'",
@@ -89,12 +90,12 @@ app.use((req, res, next) => {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "connect-src 'self' https://*.line.me https://*.line-scdn.net https://api.open-meteo.com https://air-quality-api.open-meteo.com https://geocoding-api.open-meteo.com https://nominatim.openstreetmap.org",
-    "frame-src https://*.line.me",
+    "frame-src 'self' https://*.line.me",
     "font-src 'self' data:",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'"
+    "frame-ancestors 'self'"
   ].join("; "));
   next();
 });
@@ -405,9 +406,18 @@ function cleanEvent(event) {
   if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
     throw new Error("時刻の形式が正しくありません");
   }
+  const endTime = event.endTime == null ? "" : String(event.endTime);
+  if (endTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime)) {
+    throw new Error("終了時刻の形式が正しくありません");
+  }
+  if (endTime && time && endTime <= time) {
+    throw new Error("終了時刻は開始時間より後にしてください");
+  }
   const safe = JSON.parse(JSON.stringify(event));
   safe.title = title;
   safe.time = time;
+  safe.endTime = endTime;
+  safe.category = ["school", "work", "play", "hospital", "other"].includes(safe.category) ? safe.category : "other";
   safe.repeat = ["none", "daily", "weekly", "monthly"].includes(safe.repeat) ? safe.repeat : "none";
   safe.items = Array.isArray(safe.items) ? safe.items.slice(0, 30).map(item => ({
     text: String(typeof item === "string" ? item : item?.text || "").trim().slice(0, 100),
@@ -1156,7 +1166,7 @@ async function buildDailyMessage(userId, dayOffset = 0) {
     const sorted = [...events].sort((a,b) => a.time.localeCompare(b.time));
     eventsText = `📅 ${dayOffset ? "明日" : "今日"}の予定:\n` + sorted.map(ev => {
       const items = Array.isArray(ev.items) ? ev.items.filter(item => !item.done).map(item => item.text).filter(Boolean) : [];
-      return `  ${ev.time} ${ev.title}${ev.sharedGroupName ? `（👥${ev.sharedGroupName}）` : ""}${items.length ? `\n    🎒 ${items.join("・")}` : ""}`;
+      return `  ${ev.time}${ev.endTime ? `〜${ev.endTime}` : ""} ${ev.title}${ev.sharedGroupName ? `（👥${ev.sharedGroupName}）` : ""}${items.length ? `\n    🎒 ${items.join("・")}` : ""}`;
     }).join("\n");
   }
 
